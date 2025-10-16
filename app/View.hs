@@ -2,6 +2,7 @@ module View where
 
 import Graphics.Gloss
 import qualified Data.Map as Map
+import Data.Maybe (mapMaybe, maybeToList)
 
 import Model
 
@@ -12,26 +13,38 @@ viewPure :: GameState -> Picture
 viewPure gs = 
   Pictures 
   [ renderWorld gs
-  , renderEntities gs
+  , renderPlayer (tileSize gs) (player gs)
+  , renderEntities (tileSize gs) gs
   ]
 
 renderWorld :: GameState -> Picture
-renderWorld GameState { world, tileMap, tileSize } = 
-  Pictures [
-    translate (fromIntegral (x * tileSize)) (fromIntegral ((-y) * tileSize)) (getTileSprite tileMap tile)
-    | (y, row)  <- zip [0..] $ grid world
-    , (x, tile) <- zip [0..] row
-  ]
+renderWorld GameState { world, tileMap, tileSize, player, entities, debugMode } =
+  let tileSizeF = fromIntegral tileSize
+      tilesPic = Pictures
+        [ translate (xWorld * tileSizeF) (yWorld * tileSizeF) (getTileSprite tileMap tile)
+        | (y, row)  <- zip ([0..] :: [Int]) $ grid world
+        , (x, tile) <- zip ([0..] :: [Int]) row
+        , let xWorld = fromIntegral x + 0.5
+        , let yWorld = negate (fromIntegral y) - 0.5
+        ]
+      colliderPics
+        | debugMode =
+            let worldCollidersPics = map (renderAABB tileSizeF) (colliders world)
+                playerColliderPic  = map (renderAABB tileSizeF) (maybeToList (playerCollider player))
+                entityColliderPics = map (renderAABB tileSizeF) (mapMaybe entityCollider entities)
+            in [Pictures (worldCollidersPics ++ playerColliderPic ++ entityColliderPics)]
+        | otherwise = []
+  in Pictures (tilesPic : colliderPics)
 
-renderEntities :: GameState -> Picture
-renderEntities GameState { entities } = Pictures $ map renderEntity entities
+renderEntities :: Int -> GameState -> Picture
+renderEntities tileSize GameState { entities } = Pictures $ map (renderEntity tileSize) entities
 
-renderEntity :: Entity -> Picture
-renderEntity (EPlayer p)        = renderPlayer p
-renderEntity (EGoomba g)        = renderGoomba g
-renderEntity (EKoopa  k)        = renderKoopa  k
-renderEntity EPowerup           = blank
-renderEntity EMovingPlatform    = blank
+renderEntity :: Int -> Entity -> Picture
+renderEntity tileSize (EPlayer p)     = renderPlayer tileSize p
+renderEntity _        (EGoomba g)     = renderGoomba g
+renderEntity _        (EKoopa  k)     = renderKoopa  k
+renderEntity _        EPowerup        = blank
+renderEntity _        EMovingPlatform = blank
 
 getTileSprite :: TileMap -> Tile -> Picture
 getTileSprite m t = Map.findWithDefault blank t m
@@ -39,12 +52,30 @@ getTileSprite m t = Map.findWithDefault blank t m
 -- Deze kunnen we misschien allemaal in een RenderEntity functie stoppen
 -- door bijv. alle entities een Renderable typeclass te geven waarin
 -- een functie staat zoals getSprite of getAnimation of zoiets
-renderPlayer :: Player -> Picture
-renderPlayer Player { playerPos = (x, y), playerSprite } = 
-  translate x y $ head playerSprite -- dit klopt nog niet helemaal met animaties enz
+renderPlayer :: Int -> Player -> Picture
+renderPlayer tileSize Player { playerPos = (x, y), playerSprite } = 
+  let sprite = head playerSprite
+      tileSizePixels = fromIntegral tileSize
+  in translate (x * tileSizePixels) (y * tileSizePixels) sprite -- dit klopt nog niet helemaal met animaties enz
 
 renderGoomba :: Goomba -> Picture
 renderGoomba = undefined
 
 renderKoopa :: Koopa -> Picture
 renderKoopa = undefined
+
+renderAABB :: Float -> Collider -> Picture
+renderAABB tileSize (AABB (x, y) w h) =
+  let xPixels = x * tileSize
+      yPixels = y * tileSize
+      halfW   = (w * tileSize) / 2
+      halfH   = (h * tileSize) / 2
+      corners =
+        [ (-halfW,  halfH)
+        , ( halfW,  halfH)
+        , ( halfW, -halfH)
+        , (-halfW, -halfH)
+        ]
+  in translate xPixels yPixels $
+       color green $
+         lineLoop corners

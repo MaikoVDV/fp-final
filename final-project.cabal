@@ -55,6 +55,7 @@ executable final-project
       View
       Controller
       Assets
+      Collision
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:

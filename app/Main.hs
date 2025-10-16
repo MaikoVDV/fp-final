@@ -7,32 +7,52 @@ import Model
 import View
 import Controller
 import Assets
+import qualified Collision as Collisions
+import Control.Monad (when)
+import System.Environment (getArgs)
 
 main :: IO ()
 main = do
+  args <- getArgs
   tileMap <- loadTileMap
   playerSprite <- loadPlayerSprite
 
-  let initialPlayer = Player {
-    playerPos    = (18, 18 * 10),
-    playerVel    = (0, 0),
-    onGround     = False,
-    health       = 1,
-    playerSprite = [playerSprite]
-  }
+  let debugEnabled = any (== "debug") args
+      tileSize' = 18
+      initialPlayer = Player
+        { playerPos    = (1, 10)
+        , playerVel    = (0, 0)
+        , onGround     = False
+        , health       = 1
+        , playerSprite = [playerSprite]
+        , playerColliderSpec = Just (ColliderSpec
+            { colliderWidth  = 1
+            , colliderHeight = 1
+            , colliderOffset = (0, 0)
+            })
+        }
+
+  let grid = [[Crate, Crate], [Grass, Grass, Grass]]
+
   let state = GameState {
     world     = World 
       {
-        grid = [[Crate, Crate], [Grass, Grass, Grass]],
+        grid = grid,
+        colliders = Collisions.generateCollidersForWorld grid,
         slopes = []
       },
-    entities  = [EPlayer initialPlayer],
-    tileSize  = 18,
+    player    = initialPlayer,
+    entities  = [],
+    tileSize  = tileSize',
     tileMap   = tileMap,
     frameCount = 0,
     frameTime  = 30,
-    paused     = False
+    paused     = False,
+    debugMode  = debugEnabled
   }
+
+  -- Debug: print generated colliders to check output
+  when debugEnabled $ print (colliders (world state))
 
   playIO
     (InWindow "Maiko & Sam's platformer" (800, 600) (100, 100))
