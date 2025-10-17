@@ -14,7 +14,12 @@ data GameState = GameState
     frameCount :: Int,
     frameTime  :: Int,
     paused     :: Bool,
-    debugMode  :: Bool
+    debugMode  :: Bool,
+    pendingJump :: Bool,
+    jumpHeld   :: Bool,
+    sprintHeld :: Bool,
+    moveLeftHeld :: Bool,
+    moveRightHeld :: Bool
   } deriving (Show)
 
 
@@ -57,7 +62,8 @@ data Player = Player
     onGround     :: Bool,
     playerSprite :: Animation,
     health       :: Int,
-    playerColliderSpec :: Maybe ColliderSpec
+    playerColliderSpec :: Maybe ColliderSpec,
+    playerJumpTime :: Float
   } deriving (Show)
 
 data Goomba = Goomba

@@ -11,6 +11,9 @@ import qualified Collision as Collisions
 import Control.Monad (when)
 import System.Environment (getArgs)
 
+repeatTile :: Int -> Tile -> [Tile]
+repeatTile n tile = replicate n tile
+
 main :: IO ()
 main = do
   args <- getArgs
@@ -30,12 +33,17 @@ main = do
             , colliderHeight = 1
             , colliderOffset = (0, 0)
             })
+        , playerJumpTime = 0
         }
 
-  let grid = [[Crate, Crate], [Grass, Grass, Grass]]
+  let groundRow = repeatTile 20 Grass
+      grid =
+        [ repeatTile 20 Air
+        , groundRow
+        ]
 
   let state = GameState {
-    world     = World 
+    world     = World
       {
         grid = grid,
         colliders = Collisions.generateCollidersForWorld grid,
@@ -48,7 +56,12 @@ main = do
     frameCount = 0,
     frameTime  = 30,
     paused     = False,
-    debugMode  = debugEnabled
+    debugMode  = debugEnabled,
+    pendingJump = False,
+    jumpHeld = False,
+    sprintHeld = False,
+    moveLeftHeld = False,
+    moveRightHeld = False
   }
 
   -- Debug: print generated colliders to check output
