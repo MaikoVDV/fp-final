@@ -10,12 +10,17 @@ view :: GameState -> IO Picture
 view = return . viewPure
 
 viewPure :: GameState -> Picture
-viewPure gs = 
-  Pictures 
-  [ renderWorld gs
-  , renderPlayer (tileSize gs) (player gs)
-  , renderEntities (tileSize gs) gs
-  ]
+viewPure gs =
+  let tileSizeF = fromIntegral (tileSize gs)
+      (px, py) = playerPos (player gs)
+      camX = -px * tileSizeF
+      camY = -py * tileSizeF
+  in translate camX camY $
+       Pictures
+         [ renderWorld gs
+         , renderEntities (tileSize gs) gs
+         , renderPlayer (tileSize gs) (player gs)
+         ]
 
 renderWorld :: GameState -> Picture
 renderWorld GameState { world, tileMap, tileSize, player, entities, debugMode } =
@@ -41,7 +46,7 @@ renderEntities tileSize GameState { entities } = Pictures $ map (renderEntity ti
 
 renderEntity :: Int -> Entity -> Picture
 renderEntity tileSize (EPlayer p)     = renderPlayer tileSize p
-renderEntity _        (EGoomba g)     = renderGoomba g
+renderEntity tileSize (EGoomba g)     = renderGoomba tileSize g
 renderEntity _        (EKoopa  k)     = renderKoopa  k
 renderEntity _        EPowerup        = blank
 renderEntity _        EMovingPlatform = blank
@@ -58,8 +63,14 @@ renderPlayer tileSize Player { playerPos = (x, y), playerSprite } =
       tileSizePixels = fromIntegral tileSize
   in translate (x * tileSizePixels) (y * tileSizePixels) sprite -- dit klopt nog niet helemaal met animaties enz
 
-renderGoomba :: Goomba -> Picture
-renderGoomba = undefined
+renderGoomba :: Int -> Goomba -> Picture
+renderGoomba tileSize Goomba { goombaPos = (x, y) } =
+  let ts = fromIntegral tileSize
+      w = 0.9 * ts
+      h = 0.9 * ts
+  in translate (x * ts) (y * ts) $
+       color red $
+         rectangleSolid w h
 
 renderKoopa :: Koopa -> Picture
 renderKoopa = undefined

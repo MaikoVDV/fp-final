@@ -1,32 +1,48 @@
 module Controller where
 
 import Model
+import qualified Model as M
 import Graphics.Gloss.Interface.IO.Game
-import Data.Maybe (mapMaybe)
+import Data.Maybe (mapMaybe, maybeToList, isJust)
 import qualified Collision
-import Data.List (find)
+import Data.List (find, nub)
 
 gravityAcceleration :: Float
 gravityAcceleration = -25
 
 jumpImpulse :: Float
-jumpImpulse = 8
+jumpImpulse = 7
 
-jumpStartAcceleration :: Float
-jumpStartAcceleration = 30
+jumpHoldAccelStart :: Float
+jumpHoldAccelStart = 33
 
-jumpAccelerationTime :: Float
-jumpAccelerationTime = 0.7
+jumpHoldDuration :: Float
+jumpHoldDuration = 0.6
 
-groundWalkAccel, groundSprintAccel, airMoveAccel, airMoveDecel :: Float
-groundWalkAccel = 60
-groundSprintAccel = 90
-airMoveAccel = 18
-airMoveDecel = 24
+groundWalkAccel, groundSprintAccel, groundMoveDecel, airMoveAccel, airMoveDecel :: Float
+groundWalkAccel = 65
+groundSprintAccel = 110
+groundMoveDecel = 125
+airMoveAccel = 22
+airMoveDecel = 28
+
+goombaWalkSpeed :: Float
+goombaWalkSpeed = 3
+
+goombaMoveAccel :: Float
+goombaMoveAccel = 20
+
+-- Zoom bounds for tileSize (pixels per tile)
+minTileSize, maxTileSize :: Int
+minTileSize = 6
+maxTileSize = 72
 
 groundFrictionCoeff, airFrictionCoeff :: Float
-groundFrictionCoeff = 10
+groundFrictionCoeff = 12
 airFrictionCoeff = 1.5
+
+upVector :: Vector
+upVector = (0, 1)
 
 input :: Event -> GameState -> IO GameState
 input e gs = return $ handleInput e gs
@@ -36,6 +52,11 @@ handleInput (EventKey (SpecialKey KeyLeft)  Down _ _) gs = gs { moveLeftHeld = T
 handleInput (EventKey (SpecialKey KeyRight) Down _ _) gs = gs { moveRightHeld = True }
 handleInput (EventKey (SpecialKey KeyLeft)  Up   _ _) gs = gs { moveLeftHeld = False }
 handleInput (EventKey (SpecialKey KeyRight) Up   _ _) gs = gs { moveRightHeld = False }
+-- Zoom controls
+handleInput (EventKey (Char '+') Down _ _) gs = adjustTileSize 1 gs
+handleInput (EventKey (Char '=') Down _ _) gs = adjustTileSize 1 gs
+handleInput (EventKey (Char '-') Down _ _) gs = adjustTileSize (-1) gs
+handleInput (EventKey (Char '_') Down _ _) gs = adjustTileSize (-1) gs
 handleInput (EventKey (SpecialKey KeyUp)    Down _ _) gs =
   gs { pendingJump = True, jumpHeld = True }
 handleInput (EventKey (SpecialKey KeyUp)    Up   _ _) gs =
@@ -58,7 +79,7 @@ updatePure dt gs =
 
 updateEntity :: Float -> GameState -> Entity -> Entity
 updateEntity _  _  e@(EPlayer _) = e
-updateEntity dt _  (EGoomba g)   = EGoomba (updatePhysics dt (updateMovable dt g))
+updateEntity dt gs (EGoomba g)   = EGoomba (updateGoomba dt gs g)
 updateEntity _  _  (EKoopa k)    = EKoopa k
 updateEntity _  _  e             = e
 
@@ -68,41 +89,70 @@ updatePlayer dt gs =
       blockers = colliders (world gs) ++ mapMaybe entityCollider (entities gs)
       (jumpAccel, jumpTimer) = computeJumpHold dt gs p
       movedPlayer = applyMovement dt blockers gs jumpAccel p
-      playerAfterHold =
-        let jumpTime'
-              | onGround movedPlayer = jumpAccelerationTime
+      jumpTime'
+        | onGround movedPlayer = jumpHoldDuration
               | otherwise            = jumpTimer
-        in movedPlayer { playerJumpTime = jumpTime' }
-  in if pendingJump gs && onGround playerAfterHold
-        then playerAfterHold
-               { playerVel = addVec (playerVel playerAfterHold) (0, jumpImpulse)
-               , onGround  = False
+      jumpDir'
+        | onGround movedPlayer = upVector
+        | otherwise            = playerJumpDir movedPlayer
+      playerAfterHold = movedPlayer
+        { playerJumpTime = jumpTime'
+        , playerJumpDir  = jumpDir'
+        }
+      canJump = pendingJump gs && (onGround playerAfterHold || isJust (playerSlide playerAfterHold))
+  in if canJump
+        then
+          let launchDir = computeJumpLaunchDir playerAfterHold
+              impulse   = scaleVec launchDir jumpImpulse
+          in playerAfterHold
+               { playerVel      = addVec (playerVel playerAfterHold) impulse
+               , onGround       = False
                , playerJumpTime = 0
+               , playerJumpDir  = launchDir
+               , playerSlide    = Nothing
                }
         else playerAfterHold
 
 computeJumpHold :: Float -> GameState -> Player -> (Vector, Float)
-computeJumpHold dt gs Player { playerJumpTime = t0, onGround = grounded }
-  | not (jumpHeld gs) = ((0, 0), jumpAccelerationTime)
-  | grounded          = ((0, 0), jumpAccelerationTime)
-  | t0 >= jumpAccelerationTime = ((0, 0), jumpAccelerationTime)
+computeJumpHold dt gs Player { playerJumpTime = t0, onGround = grounded, playerJumpDir = initDir }
+  | not (jumpHeld gs)        = ((0, 0), jumpHoldDuration)
+  | grounded                 = ((0, 0), jumpHoldDuration)
+  | t0 >= jumpHoldDuration   = ((0, 0), jumpHoldDuration)
   | otherwise =
-      let startTime = max 0 (min jumpAccelerationTime t0)
-          endTime = min jumpAccelerationTime (startTime + dt)
-          accelStart = jumpHoldValue startTime
-          accelEnd   = jumpHoldValue endTime
-          accelAvg   = 0.5 * (accelStart + accelEnd)
-      in ((0, accelAvg), endTime)
+      let startTime   = clampInterval t0
+          endTime     = min jumpHoldDuration (startTime + dt)
+          accelStart  = jumpHoldValue startTime
+          accelEnd    = jumpHoldValue endTime
+          dirStart    = jumpDirectionAt initDir startTime
+          dirEnd      = jumpDirectionAt initDir endTime
+          accelVecStart = scaleVec dirStart accelStart
+          accelVecEnd   = scaleVec dirEnd   accelEnd
+          avgAccelVec   = scaleVec (addVec accelVecStart accelVecEnd) 0.5
+      in (avgAccelVec, endTime)
+  where
+    clampInterval t = max 0 (min jumpHoldDuration t)
 
 jumpHoldValue :: Float -> Float
 jumpHoldValue t
-  | jumpAccelerationTime <= 0 = 0
+  | jumpHoldDuration <= 0 = 0
   | otherwise =
-      let factor = max 0 (1 - t / jumpAccelerationTime)
-      in jumpStartAcceleration * factor
+      let factor = max 0 (1 - t / jumpHoldDuration)
+      in jumpHoldAccelStart * factor
+
+jumpDirectionAt :: Vector -> Float -> Vector
+jumpDirectionAt initDir t
+  | jumpHoldDuration <= 0 = upVector
+  | otherwise =
+      let alpha = clamp01 (t / jumpHoldDuration)
+          blended = addVec (scaleVec initDir (1 - alpha)) (scaleVec upVector alpha)
+      in normalizeVec blended
 
 applyMovement :: Float -> [Collider] -> GameState -> Vector -> Player -> Player
-applyMovement dt blockers gs jumpAccel p@Player { playerPos = pos, playerVel = vel, playerColliderSpec } =
+applyMovement dt blockers gs jumpAccel p@Player { playerPos = pos
+                                                , playerVel = vel
+                                                , playerColliderSpec
+                                                , playerSlide = prevSlide
+                                                } =
   let gravityAccel = (0, gravityAcceleration)
       moveDirRaw = boolToDir (moveLeftHeld gs) (moveRightHeld gs)
       moveDir = clampInput moveDirRaw
@@ -111,17 +161,20 @@ applyMovement dt blockers gs jumpAccel p@Player { playerPos = pos, playerVel = v
           then (0, 0)
           else
             let controlMag
-                  | onGround p = if sprintHeld gs then groundSprintAccel else groundWalkAccel
+                  | onGround p =
+                      let baseAccel = if sprintHeld gs then groundSprintAccel else groundWalkAccel
+                          vx = fst vel
+                          sameDir = moveDir * vx >= 0
+                      in if sameDir then baseAccel else groundMoveDecel
                   | otherwise =
                       let vx = fst vel
                           sameDir = moveDir * vx >= 0
                       in if sameDir then airMoveAccel else airMoveDecel
             in (moveDir * controlMag, 0)
-      frictionCoeff = if onGround p then groundFrictionCoeff else airFrictionCoeff
-      frictionAccel = (-frictionCoeff * fst vel, 0)
+      airDrag = (- (airFrictionCoeff * fst vel), 0)
       totalAccel = gravityAccel
                    `addVec` controlAccel
-                   `addVec` frictionAccel
+                   `addVec` airDrag
                    `addVec` jumpAccel
       velAfterAccel = addVec vel (scaleVec totalAccel dt)
       displacement = scaleVec velAfterAccel dt
@@ -130,8 +183,17 @@ applyMovement dt blockers gs jumpAccel p@Player { playerPos = pos, playerVel = v
           Nothing   -> (addVecToPoint pos displacement, noCollisionFlags)
           Just spec -> resolveMovement spec pos displacement blockers
       velAfterCollision = applyCollisionFlags flags velAfterAccel
+      contacts = contactNormals flags
+      newSlide = determineSlide playerColliderSpec resolvedPos blockers contacts prevSlide
+      frictionContacts = contacts ++ maybeToList newSlide
+      contactDrag = contactFrictionAccel frictionContacts velAfterCollision
+      velFinal = addVec velAfterCollision (scaleVec contactDrag dt)
       onGround' = groundContact flags
-  in p { playerPos = resolvedPos, playerVel = velAfterCollision, onGround = onGround' }
+  in p { playerPos = resolvedPos
+       , playerVel = velFinal
+       , onGround = onGround'
+       , playerSlide = newSlide
+       }
 
 applyCollisionFlags :: CollisionFlags -> Vector -> Vector
 applyCollisionFlags CollisionFlags { hitX, hitY } (vx, vy) =
@@ -150,19 +212,21 @@ data SweepResult
 data Axis = AxisX | AxisY deriving (Eq, Show)
 
 data CollisionFlags = CollisionFlags
-  { hitX          :: Bool
-  , hitY          :: Bool
-  , groundContact :: Bool
+  { hitX           :: Bool
+  , hitY           :: Bool
+  , groundContact  :: Bool
+  , contactNormals :: [Vector]
   } deriving (Eq, Show)
 
 noCollisionFlags :: CollisionFlags
-noCollisionFlags = CollisionFlags False False False
+noCollisionFlags = CollisionFlags False False False []
 
 combineFlags :: CollisionFlags -> CollisionFlags -> CollisionFlags
 combineFlags a b = CollisionFlags
-  { hitX          = hitX a || hitX b
-  , hitY          = hitY a || hitY b
-  , groundContact = groundContact a || groundContact b
+  { hitX           = hitX a || hitX b
+  , hitY           = hitY a || hitY b
+  , groundContact  = groundContact a || groundContact b
+  , contactNormals = contactNormals a ++ contactNormals b
   }
 
 resolveMovement :: ColliderSpec -> Point -> Vector -> [Collider]
@@ -197,8 +261,8 @@ collisionFlagsFor :: Axis -> Vector -> CollisionFlags
 collisionFlagsFor axis normal =
   let ground = isGroundNormal normal
   in case axis of
-       AxisX -> CollisionFlags True False False
-       AxisY -> CollisionFlags False True ground
+       AxisX -> CollisionFlags True False ground [normal]
+       AxisY -> CollisionFlags False True ground [normal]
 
 isGroundNormal :: Vector -> Bool
 isGroundNormal (nx, ny) =
@@ -237,6 +301,62 @@ sweepSegment spec start disp blockers steps = go 1 start
                Just blocker -> SweepHit { safePos = prevPos, hitPos = current, hitBlocker = blocker }
                Nothing      -> go (i + 1) current
 
+contactFrictionAccel :: [Vector] -> Vector -> Vector
+contactFrictionAccel normals vel =
+  foldl addVec (0, 0)
+    [ scaleVec tangent (- (groundFrictionCoeff * dotVec vel tangent))
+    | tangent <- map tangentFromNormal (unique normals)
+    ]
+  where
+    unique = nub
+
+tangentFromNormal :: Vector -> Vector
+tangentFromNormal (nx, ny) = normalizeVec (-ny, nx)
+
+dotVec :: Vector -> Vector -> Float
+dotVec (x1, y1) (x2, y2) = x1 * x2 + y1 * y2
+
+normalizeVec :: Vector -> Vector
+normalizeVec (x, y) =
+  let mag = sqrt (x * x + y * y)
+  in if mag < 1e-6 then (0, 0) else (x / mag, y / mag)
+
+determineSlide :: Maybe ColliderSpec -> Point -> [Collider] -> [Vector] -> Maybe Vector -> Maybe Vector
+determineSlide spec pos blockers contacts prevSlide =
+  case find isWallNormal contacts of
+    Just wall -> Just wall
+    Nothing   ->
+      case (spec, prevSlide) of
+        (Just s, Just normal)
+          | isWallNormal normal
+          , stillTouching s pos blockers normal -> Just normal
+        _ -> Nothing
+
+computeJumpLaunchDir :: Player -> Vector
+computeJumpLaunchDir Player { onGround, playerSlide, playerJumpDir } =
+  normalizeVec $ case () of
+    _ | onGround -> upVector
+      | Just normal <- playerSlide -> addVec normal upVector
+      | otherwise -> playerJumpDir
+
+isWallNormal :: Vector -> Bool
+isWallNormal (nx, ny) = abs nx > 0.5 && abs ny < 0.75
+
+stillTouching :: ColliderSpec -> Point -> [Collider] -> Vector -> Bool
+stillTouching spec pos blockers normal =
+  let probePos = addVecToPoint pos (scaleVec (negateVec normal) slideProbeDistance)
+      testCollider = specToCollider probePos spec
+  in any (Collision.collides testCollider) blockers
+
+slideProbeDistance :: Float
+slideProbeDistance = 0.02
+
+clamp01 :: Float -> Float
+clamp01 x
+  | x < 0     = 0
+  | x > 1     = 1
+  | otherwise = x
+
 boolToDir :: Bool -> Bool -> Float
 boolToDir left right = (if right then 1.0 else 0.0) - (if left then 1.0 else 0.0)
 
@@ -245,6 +365,11 @@ clampInput x
   | x > 1     = 1
   | x < -1    = -1
   | otherwise = x
+
+clampGoombaVelocity :: Vector -> Vector
+clampGoombaVelocity (vx, vy) =
+  let vx' = max (-goombaWalkSpeed) (min goombaWalkSpeed vx)
+  in (vx', vy)
 
 addVec :: Vector -> Vector -> Vector
 addVec (x1, y1) (x2, y2) = (x1 + x2, y1 + y2)
@@ -257,6 +382,19 @@ addVecToPoint (x, y) (dx, dy) = (x + dx, y + dy)
 
 subPoints :: Point -> Point -> Vector
 subPoints (x1, y1) (x0, y0) = (x1 - x0, y1 - y0)
+
+negateVec :: Vector -> Vector
+negateVec (x, y) = (-x, -y)
+
+-- Adjust zoom by changing tileSize, clamped to [minTileSize, maxTileSize]
+adjustTileSize :: Int -> GameState -> GameState
+adjustTileSize delta gs =
+  let cur = tileSize gs
+      newVal = clampTileSize (cur + delta)
+  in gs { tileSize = newVal }
+
+clampTileSize :: Int -> Int
+clampTileSize n = max minTileSize (min maxTileSize n)
 
 class Movable e where
   getPos :: e -> Point
@@ -296,3 +434,45 @@ instance Movable Goomba where
 
 instance Rigidbody Goomba where
   getLevelCollisions = undefined
+updateGoomba :: Float -> GameState -> Goomba -> Goomba
+updateGoomba dt gs g@Goomba { goombaPos = pos
+                            , goombaVel = vel
+                            , goombaColliderSpec = mSpec
+                            , goombaDir = dir
+                            } =
+  case mSpec of
+    Nothing ->
+      let velAfterAccel = addVec vel (scaleVec totalAccel dt)
+          velLimited    = clampGoombaVelocity velAfterAccel
+          newPos        = addVecToPoint pos (scaleVec velLimited dt)
+      in g { goombaPos = newPos
+           , goombaVel = velLimited
+           }
+    Just spec ->
+      let velAfterAccel   = addVec vel (scaleVec totalAccel dt)
+          displacement    = scaleVec velAfterAccel dt
+          blockers        = colliders (world gs) ++ maybeToList (playerCollider (player gs))
+          (resolvedPos, flags) = resolveMovement spec pos displacement blockers
+          velAfterCollision    = applyCollisionFlags flags velAfterAccel
+          contactDrag          = contactFrictionAccel (contactNormals flags) velAfterCollision
+          velWithFriction      = addVec velAfterCollision (scaleVec contactDrag dt)
+          velLimited           = clampGoombaVelocity velWithFriction
+          hitWall              = hitX flags
+          newDir               = if hitWall then flipDir dir else dir
+          adjVx                = if hitWall then 0 else fst velLimited
+          velFinal             = (adjVx, snd velLimited)
+      in g { goombaPos     = resolvedPos
+           , goombaVel     = velFinal
+           , goombaDir     = newDir
+           , goombaOnGround = groundContact flags
+           }
+  where
+    gravityAccel  = (0, gravityAcceleration)
+    accelSign     = case dir of { M.Left -> -1; M.Right -> 1 }
+    goombaAccel   = (fromIntegral accelSign * goombaMoveAccel, 0)
+    airDrag       = (-airFrictionCoeff * fst vel, 0)
+    totalAccel    = gravityAccel `addVec` goombaAccel `addVec` airDrag
+
+flipDir :: M.MoveDir -> M.MoveDir
+flipDir M.Left  = M.Right
+flipDir M.Right = M.Left

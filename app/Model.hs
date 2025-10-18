@@ -63,7 +63,12 @@ data Player = Player
     playerSprite :: Animation,
     health       :: Int,
     playerColliderSpec :: Maybe ColliderSpec,
-    playerJumpTime :: Float
+    playerJumpTime :: Float,
+    playerJumpDir  :: Vector,
+    playerSlide :: Maybe Vector,
+    playerAccelTime :: Float,
+    playerAccelDir  :: Float,
+    playerAccelSprint :: Bool
   } deriving (Show)
 
 data Goomba = Goomba
@@ -71,7 +76,8 @@ data Goomba = Goomba
     goombaPos :: Point,
     goombaVel :: Vector,
     goombaDir :: MoveDir,
-    goombaColliderSpec :: Maybe ColliderSpec
+    goombaColliderSpec :: Maybe ColliderSpec,
+    goombaOnGround :: Bool
   } deriving (Show)
 
 data Koopa = Koopa
