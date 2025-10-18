@@ -8,13 +8,13 @@ import qualified Collision
 import Data.List (find, nub)
 
 gravityAcceleration :: Float
-gravityAcceleration = -25
+gravityAcceleration = -35
 
 jumpImpulse :: Float
-jumpImpulse = 7
+jumpImpulse = 8
 
 jumpHoldAccelStart :: Float
-jumpHoldAccelStart = 33
+jumpHoldAccelStart = 40
 
 jumpHoldDuration :: Float
 jumpHoldDuration = 0.6
@@ -186,7 +186,10 @@ applyMovement dt blockers gs jumpAccel p@Player { playerPos = pos
       contacts = contactNormals flags
       newSlide = determineSlide playerColliderSpec resolvedPos blockers contacts prevSlide
       frictionContacts = contacts ++ maybeToList newSlide
-      contactDrag = contactFrictionAccel frictionContacts velAfterCollision
+      vyAfterCollision = snd velAfterCollision
+      contactDrag
+        | vyAfterCollision > 0 = (0, 0)
+        | otherwise            = contactFrictionAccel frictionContacts velAfterCollision
       velFinal = addVec velAfterCollision (scaleVec contactDrag dt)
       onGround' = groundContact flags
   in p { playerPos = resolvedPos
