@@ -6,6 +6,17 @@ import Data.Maybe (mapMaybe, maybeToList)
 
 import Model
 
+baseTilePixelSize :: Float
+baseTilePixelSize = 18
+
+tileScaleFactor :: Int -> Float
+tileScaleFactor size = fromIntegral size / baseTilePixelSize
+
+withTileScale :: Int -> Picture -> Picture
+withTileScale size pic =
+  let s = tileScaleFactor size
+  in scale s s pic
+
 view :: GameState -> IO Picture
 view = return . viewPure
 
@@ -26,7 +37,7 @@ renderWorld :: GameState -> Picture
 renderWorld GameState { world, tileMap, tileSize, player, entities, debugMode } =
   let tileSizeF = fromIntegral tileSize
       tilesPic = Pictures
-        [ translate (xWorld * tileSizeF) (yWorld * tileSizeF) (getTileSprite tileMap tile)
+        [ translate (xWorld * tileSizeF) (yWorld * tileSizeF) (withTileScale tileSize (getTileSprite tileMap tile))
         | (y, row)  <- zip ([0..] :: [Int]) $ grid world
         , (x, tile) <- zip ([0..] :: [Int]) row
         , let xWorld = fromIntegral x + 0.5
@@ -61,7 +72,8 @@ renderPlayer :: Int -> Player -> Picture
 renderPlayer tileSize Player { playerPos = (x, y), playerSprite } = 
   let sprite = head playerSprite
       tileSizePixels = fromIntegral tileSize
-  in translate (x * tileSizePixels) (y * tileSizePixels) sprite -- dit klopt nog niet helemaal met animaties enz
+      spriteScaled = withTileScale tileSize sprite
+  in translate (x * tileSizePixels) (y * tileSizePixels) spriteScaled -- dit klopt nog niet helemaal met animaties enz
 
 renderGoomba :: Int -> Goomba -> Picture
 renderGoomba tileSize Goomba { goombaPos = (x, y) } =

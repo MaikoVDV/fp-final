@@ -6,6 +6,7 @@ import Graphics.Gloss.Interface.IO.Game
 import Data.Maybe (mapMaybe, maybeToList, isJust)
 import qualified Collision
 import Data.List (find, nub)
+import Debug.Trace (trace)
 
 gravityAcceleration :: Float
 gravityAcceleration = -35
@@ -14,16 +15,17 @@ jumpImpulse :: Float
 jumpImpulse = 8
 
 jumpHoldAccelStart :: Float
-jumpHoldAccelStart = 40
+jumpHoldAccelStart = 44
 
 jumpHoldDuration :: Float
-jumpHoldDuration = 0.6
+jumpHoldDuration = 0.5
 
-groundWalkAccel, groundSprintAccel, groundMoveDecel, airMoveAccel, airMoveDecel :: Float
+groundWalkAccel, groundSprintAccel, groundMoveDecel, airWalkAccel, airSprintAccel, airMoveDecel :: Float
 groundWalkAccel = 65
 groundSprintAccel = 110
 groundMoveDecel = 125
-airMoveAccel = 22
+airWalkAccel = 14
+airSprintAccel = 24
 airMoveDecel = 28
 
 goombaWalkSpeed :: Float
@@ -63,7 +65,7 @@ handleInput (EventKey (SpecialKey KeyUp)    Up   _ _) gs =
   gs { jumpHeld = False }
 handleInput (EventKey (SpecialKey KeyCtrlR) Down _ _) gs = gs { sprintHeld = True }
 handleInput (EventKey (SpecialKey KeyCtrlR) Up   _ _) gs = gs { sprintHeld = False }
-handleInput _ gs = gs 
+handleInput _ gs = gs
 
 update :: Float -> GameState -> IO GameState
 update dt gs = return $ updatePure dt gs
@@ -167,9 +169,10 @@ applyMovement dt blockers gs jumpAccel p@Player { playerPos = pos
                           sameDir = moveDir * vx >= 0
                       in if sameDir then baseAccel else groundMoveDecel
                   | otherwise =
-                      let vx = fst vel
+                      let baseAccel = if sprintHeld gs then airSprintAccel else airWalkAccel
+                          vx = fst vel
                           sameDir = moveDir * vx >= 0
-                      in if sameDir then airMoveAccel else airMoveDecel
+                      in if sameDir then baseAccel else airMoveDecel
             in (moveDir * controlMag, 0)
       airDrag = (- (airFrictionCoeff * fst vel), 0)
       totalAccel = gravityAccel
@@ -354,6 +357,9 @@ stillTouching spec pos blockers normal =
 slideProbeDistance :: Float
 slideProbeDistance = 0.02
 
+wallProbeDistance :: Float
+wallProbeDistance = 0.05
+
 clamp01 :: Float -> Float
 clamp01 x
   | x < 0     = 0
@@ -402,7 +408,7 @@ clampTileSize n = max minTileSize (min maxTileSize n)
 class Movable e where
   getPos :: e -> Point
   setPos :: e -> Point -> e
-  getVel :: e -> Vector 
+  getVel :: e -> Vector
   setVel :: e -> Vector -> e
 
 class Movable e => Rigidbody e where
@@ -430,7 +436,7 @@ instance Rigidbody Player where
   getLevelCollisions = undefined
 
 instance Movable Goomba where
-  getPos       = goombaPos 
+  getPos       = goombaPos
   setPos g pos = g { goombaPos = pos }
   getVel       = goombaVel
   setVel g vel = g { goombaVel = vel }
@@ -460,8 +466,17 @@ updateGoomba dt gs g@Goomba { goombaPos = pos
           contactDrag          = contactFrictionAccel (contactNormals flags) velAfterCollision
           velWithFriction      = addVec velAfterCollision (scaleVec contactDrag dt)
           velLimited           = clampGoombaVelocity velWithFriction
-          hitWall              = hitX flags
-          newDir               = if hitWall then flipDir dir else dir
+          wallAhead            =
+            hitX flags &&
+            let probeOffset   = (dirSign * wallProbeDistance, 0)
+                probeCollider = specToCollider (addVecToPoint resolvedPos probeOffset) spec
+            in any (Collision.collides probeCollider) blockers
+          hitWall              = wallAhead
+          newDirBase           = if hitWall then flipDir dir else dir
+          newDir               =
+            if hitWall
+              then trace ("[DEBUG] Goomba wall collision at " ++ show resolvedPos) newDirBase
+              else newDirBase
           adjVx                = if hitWall then 0 else fst velLimited
           velFinal             = (adjVx, snd velLimited)
       in g { goombaPos     = resolvedPos
@@ -471,9 +486,9 @@ updateGoomba dt gs g@Goomba { goombaPos = pos
            }
   where
     gravityAccel  = (0, gravityAcceleration)
-    accelSign     = case dir of { M.Left -> -1; M.Right -> 1 }
-    goombaAccel   = (fromIntegral accelSign * goombaMoveAccel, 0)
-    airDrag       = (-airFrictionCoeff * fst vel, 0)
+    dirSign       = case dir of { M.Left -> -1.0; M.Right -> 1.0 }
+    goombaAccel   = (dirSign * goombaMoveAccel, 0)
+    airDrag       = (- (airFrictionCoeff * fst vel), 0)
     totalAccel    = gravityAccel `addVec` goombaAccel `addVec` airDrag
 
 flipDir :: M.MoveDir -> M.MoveDir
