@@ -3,18 +3,26 @@ module View where
 import Graphics.Gloss
 import qualified Data.Map as Map
 import Data.Maybe (mapMaybe, maybeToList)
+import InitialState (baseTilePixelSizeForScreen)
 
 import Model
 
-baseTilePixelSize :: Float
-baseTilePixelSize = 18
+assetTilePixelSize :: Float
+assetTilePixelSize = 18
 
-tileScaleFactor :: Int -> Float
-tileScaleFactor size = fromIntegral size / baseTilePixelSize
+scaleFactor :: Float
+scaleFactor = 0.5
 
-withTileScale :: Int -> Picture -> Picture
-withTileScale size pic =
-  let s = tileScaleFactor size
+tilePixelsForState :: GameState -> Float
+tilePixelsForState GameState { tileZoom, screenSize } =
+  baseTilePixelSizeForScreen screenSize * tileZoom * scaleFactor
+
+tileScaleFactor :: Float -> Float
+tileScaleFactor tilePixels = tilePixels / assetTilePixelSize
+
+withTileScale :: Float -> Picture -> Picture
+withTileScale tilePixels pic =
+  let s = tileScaleFactor tilePixels
   in scale s s pic
 
 view :: AppState -> IO Picture
@@ -26,15 +34,19 @@ viewPure (Playing gs) = viewGame gs
 
 viewGame :: GameState -> Picture
 viewGame gs =
-  let tileSizeF = fromIntegral (tileSize gs)
+  let tilePixels = tilePixelsForState gs
       (px, py) = playerPos (player gs)
-      camX = -px * tileSizeF
-      camY = -py * tileSizeF
+      (_, screenHeightInt) = screenSize gs
+      screenHeight = fromIntegral screenHeightInt
+      desiredPlayerScreenFraction = 1 / 3 :: Float
+      targetPlayerY = (-0.5 + desiredPlayerScreenFraction) * screenHeight
+      camX = -px * tilePixels
+      camY = targetPlayerY - (py * tilePixels)
   in translate camX camY $
        Pictures
-         [ renderWorld gs
-         , renderEntities (tileSize gs) gs
-         , renderPlayer (tileSize gs) (player gs)
+         [ renderWorld tilePixels gs
+         , renderEntities tilePixels gs
+         , renderPlayer tilePixels (player gs)
          ]
 
 renderMenu :: MenuState -> Picture
@@ -58,11 +70,10 @@ renderMenu MenuState { menuDebugMode } =
         | otherwise = blank
   in Pictures [titleText, promptText, debugText]
 
-renderWorld :: GameState -> Picture
-renderWorld GameState { world, tileMap, tileSize, player, entities, debugMode } =
-  let tileSizeF = fromIntegral tileSize
-      tilesPic = Pictures
-        [ translate (xWorld * tileSizeF) (yWorld * tileSizeF) (withTileScale tileSize (getTileSprite tileMap tile))
+renderWorld :: Float -> GameState -> Picture
+renderWorld tilePixels GameState { world, tileMap, player, entities, debugMode } =
+  let tilesPic = Pictures
+        [ translate (xWorld * tilePixels) (yWorld * tilePixels) (withTileScale tilePixels (getTileSprite tileMap tile))
         | (y, row)  <- zip ([0..] :: [Int]) $ grid world
         , (x, tile) <- zip ([0..] :: [Int]) row
         , let xWorld = fromIntegral x + 0.5
@@ -70,19 +81,19 @@ renderWorld GameState { world, tileMap, tileSize, player, entities, debugMode } 
         ]
       colliderPics
         | debugMode =
-            let worldCollidersPics = map (renderAABB tileSizeF) (colliders world)
-                playerColliderPic  = map (renderAABB tileSizeF) (maybeToList (playerCollider player))
-                entityColliderPics = map (renderAABB tileSizeF) (mapMaybe entityCollider entities)
+            let worldCollidersPics = map (renderAABB tilePixels) (colliders world)
+                playerColliderPic  = map (renderAABB tilePixels) (maybeToList (playerCollider player))
+                entityColliderPics = map (renderAABB tilePixels) (mapMaybe entityCollider entities)
             in [Pictures (worldCollidersPics ++ playerColliderPic ++ entityColliderPics)]
         | otherwise = []
   in Pictures (tilesPic : colliderPics)
 
-renderEntities :: Int -> GameState -> Picture
-renderEntities tileSize GameState { entities } = Pictures $ map (renderEntity tileSize) entities
+renderEntities :: Float -> GameState -> Picture
+renderEntities tilePixels GameState { entities } = Pictures $ map (renderEntity tilePixels) entities
 
-renderEntity :: Int -> Entity -> Picture
-renderEntity tileSize (EPlayer p)     = renderPlayer tileSize p
-renderEntity tileSize (EGoomba g)     = renderGoomba tileSize g
+renderEntity :: Float -> Entity -> Picture
+renderEntity tilePixels (EPlayer p)     = renderPlayer tilePixels p
+renderEntity tilePixels (EGoomba g)     = renderGoomba tilePixels g
 renderEntity _        (EKoopa  k)     = renderKoopa  k
 renderEntity _        EPowerup        = blank
 renderEntity _        EMovingPlatform = blank
@@ -93,19 +104,17 @@ getTileSprite m t = Map.findWithDefault blank t m
 -- Deze kunnen we misschien allemaal in een RenderEntity functie stoppen
 -- door bijv. alle entities een Renderable typeclass te geven waarin
 -- een functie staat zoals getSprite of getAnimation of zoiets
-renderPlayer :: Int -> Player -> Picture
-renderPlayer tileSize Player { playerPos = (x, y), playerSprite } = 
+renderPlayer :: Float -> Player -> Picture
+renderPlayer tilePixels Player { playerPos = (x, y), playerSprite } = 
   let sprite = head playerSprite
-      tileSizePixels = fromIntegral tileSize
-      spriteScaled = withTileScale tileSize sprite
-  in translate (x * tileSizePixels) (y * tileSizePixels) spriteScaled -- dit klopt nog niet helemaal met animaties enz
+      spriteScaled = withTileScale tilePixels sprite
+  in translate (x * tilePixels) (y * tilePixels) spriteScaled -- dit klopt nog niet helemaal met animaties enz
 
-renderGoomba :: Int -> Goomba -> Picture
-renderGoomba tileSize Goomba { goombaPos = (x, y) } =
-  let ts = fromIntegral tileSize
-      w = 0.9 * ts
-      h = 0.9 * ts
-  in translate (x * ts) (y * ts) $
+renderGoomba :: Float -> Goomba -> Picture
+renderGoomba tilePixels Goomba { goombaPos = (x, y) } =
+  let w = 0.9 * tilePixels
+      h = 0.9 * tilePixels
+  in translate (x * tilePixels) (y * tilePixels) $
        color red $
          rectangleSolid w h
 

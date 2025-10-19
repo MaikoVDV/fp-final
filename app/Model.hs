@@ -10,7 +10,8 @@ data GameState = GameState
     player       :: Player,
     entities     :: [Entity],
     tileMap      :: TileMap,
-    tileSize     :: Int,
+    tileZoom     :: Float,
+    screenSize   :: (Int, Int),
     frameCount   :: Int,
     frameTime    :: Int,
     paused       :: Bool,
@@ -26,6 +27,7 @@ data MenuState = MenuState
   { menuTileMap      :: TileMap
   , menuPlayerSprite :: Picture
   , menuDebugMode    :: Bool
+  , menuScreenSize   :: (Int, Int)
   }
 
 data AppState

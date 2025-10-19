@@ -9,6 +9,7 @@ import qualified Collision
 import Data.List (find, nub)
 import Debug.Trace (trace)
 import InitialState (buildInitialGameState)
+import System.Exit (exitSuccess)
 
 gravityAcceleration :: Float
 gravityAcceleration = -35
@@ -23,11 +24,11 @@ jumpHoldDuration :: Float
 jumpHoldDuration = 0.5
 
 groundWalkAccel, groundSprintAccel, groundMoveDecel, airWalkAccel, airSprintAccel, airMoveDecel :: Float
-groundWalkAccel = 65
-groundSprintAccel = 110
+groundWalkAccel = 40
+groundSprintAccel = 80
 groundMoveDecel = 125
-airWalkAccel = 14
-airSprintAccel = 24
+airWalkAccel = 10
+airSprintAccel = 17
 airMoveDecel = 28
 
 goombaWalkSpeed :: Float
@@ -36,10 +37,13 @@ goombaWalkSpeed = 3
 goombaMoveAccel :: Float
 goombaMoveAccel = 20
 
--- Zoom bounds for tileSize (pixels per tile)
-minTileSize, maxTileSize :: Int
-minTileSize = 6
-maxTileSize = 72
+-- Zoom bounds for tile scaling
+minTileZoom, maxTileZoom :: Float
+minTileZoom = 0.5
+maxTileZoom = 2.0
+
+zoomStep :: Float
+zoomStep = 0.1
 
 groundFrictionCoeff, airFrictionCoeff :: Float
 groundFrictionCoeff = 12
@@ -49,6 +53,7 @@ upVector :: Vector
 upVector = (0, 1)
 
 input :: Event -> AppState -> IO AppState
+input (EventKey (SpecialKey KeyEsc) Down _ _) appState = exitSuccess >> return appState
 input e appState =
   case appState of
     Menu menuState  -> handleMenuInput e menuState
@@ -60,7 +65,12 @@ handleMenuInput _ menuState = return (Menu menuState)
 
 startGame :: MenuState -> IO AppState
 startGame menuState = do
-  let gameState = buildInitialGameState (menuDebugMode menuState) (menuTileMap menuState) (menuPlayerSprite menuState)
+  let gameState =
+        buildInitialGameState
+          (menuDebugMode menuState)
+          (menuTileMap menuState)
+          (menuPlayerSprite menuState)
+          (menuScreenSize menuState)
   when (menuDebugMode menuState) $
     print (colliders (world gameState))
   return (Playing gameState)
@@ -71,10 +81,10 @@ handlePlayingInput (EventKey (SpecialKey KeyRight) Down _ _) gs = gs { moveRight
 handlePlayingInput (EventKey (SpecialKey KeyLeft)  Up   _ _) gs = gs { moveLeftHeld = False }
 handlePlayingInput (EventKey (SpecialKey KeyRight) Up   _ _) gs = gs { moveRightHeld = False }
 -- Zoom controls
-handlePlayingInput (EventKey (Char '+') Down _ _) gs = adjustTileSize 1 gs
-handlePlayingInput (EventKey (Char '=') Down _ _) gs = adjustTileSize 1 gs
-handlePlayingInput (EventKey (Char '-') Down _ _) gs = adjustTileSize (-1) gs
-handlePlayingInput (EventKey (Char '_') Down _ _) gs = adjustTileSize (-1) gs
+handlePlayingInput (EventKey (Char '+') Down _ _) gs = adjustTileZoom zoomStep gs
+handlePlayingInput (EventKey (Char '=') Down _ _) gs = adjustTileZoom zoomStep gs
+handlePlayingInput (EventKey (Char '-') Down _ _) gs = adjustTileZoom (-zoomStep) gs
+handlePlayingInput (EventKey (Char '_') Down _ _) gs = adjustTileZoom (-zoomStep) gs
 handlePlayingInput (EventKey (SpecialKey KeyUp)    Down _ _) gs =
   gs { pendingJump = True, jumpHeld = True }
 handlePlayingInput (EventKey (SpecialKey KeyUp)    Up   _ _) gs =
@@ -412,15 +422,15 @@ subPoints (x1, y1) (x0, y0) = (x1 - x0, y1 - y0)
 negateVec :: Vector -> Vector
 negateVec (x, y) = (-x, -y)
 
--- Adjust zoom by changing tileSize, clamped to [minTileSize, maxTileSize]
-adjustTileSize :: Int -> GameState -> GameState
-adjustTileSize delta gs =
-  let cur = tileSize gs
-      newVal = clampTileSize (cur + delta)
-  in gs { tileSize = newVal }
+-- Adjust zoom by changing tileZoom, clamped to [minTileZoom, maxTileZoom]
+adjustTileZoom :: Float -> GameState -> GameState
+adjustTileZoom delta gs =
+  let cur = tileZoom gs
+      newVal = clampTileZoom (cur + delta)
+  in gs { tileZoom = newVal }
 
-clampTileSize :: Int -> Int
-clampTileSize n = max minTileSize (min maxTileSize n)
+clampTileZoom :: Float -> Float
+clampTileZoom n = max minTileZoom (min maxTileZoom n)
 
 class Movable e where
   getPos :: e -> Point

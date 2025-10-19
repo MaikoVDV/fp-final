@@ -1,5 +1,7 @@
 module InitialState
   ( buildInitialGameState
+  , baseTilePixelSizeForScreen
+  , targetTilesHorizontal
   ) where
 
 import Graphics.Gloss (Picture)
@@ -8,18 +10,28 @@ import Model
 import qualified Model as M
 import qualified Collision as Collisions
 
-buildInitialGameState :: Bool -> TileMap -> Picture -> GameState
-buildInitialGameState debugEnabled tileMap playerSpriteImage =
-  let tileSize' = 18
-      initialPlayer = Player
-        { playerPos    = (1, 10)
+targetTilesHorizontal :: Float
+targetTilesHorizontal = 20
+
+tilePixelSizeScale :: Float
+tilePixelSizeScale = 0.9
+
+baseTilePixelSizeForScreen :: (Int, Int) -> Float
+baseTilePixelSizeForScreen (screenWidth, screenHeight) =
+  let aspect = fromIntegral screenWidth / max 1 (fromIntegral screenHeight)
+  in (fromIntegral screenHeight * aspect / targetTilesHorizontal) * tilePixelSizeScale
+
+buildInitialGameState :: Bool -> TileMap -> Picture -> (Int, Int) -> GameState
+buildInitialGameState debugEnabled tileMap playerSpriteImage screenDims =
+  let initialPlayer = Player
+        { playerPos    = (1, 0)
         , playerVel    = (0, 0)
         , onGround     = False
         , health       = 1
         , playerSprite = [playerSpriteImage]
         , playerColliderSpec = Just ColliderSpec
-            { colliderWidth  = 0.8
-            , colliderHeight = 0.85
+            { colliderWidth  = 0.6
+            , colliderHeight = 0.75
             , colliderOffset = (0, 0)
             }
         , playerJumpTime = 0
@@ -65,13 +77,14 @@ buildInitialGameState debugEnabled tileMap playerSpriteImage =
             , colliderHeight = 0.9
             , colliderOffset = (0, 0)
             }
-        , goombaOnGround = False
-        }
+      , goombaOnGround = False
+      }
   in GameState
       { world = worldState
       , player = initialPlayer
       , entities = [goomba]
-      , tileSize = tileSize'
+      , tileZoom = 1.0
+      , screenSize = screenDims
       , tileMap = tileMap
       , frameCount = 0
       , frameTime = 30
