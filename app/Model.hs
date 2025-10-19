@@ -6,21 +6,31 @@ import qualified Data.Map as Map
 -- GameState
 data GameState = GameState
   {
-    world      :: World,
-    player     :: Player,
-    entities   :: [Entity],
-    tileMap    :: TileMap,
-    tileSize   :: Int,
-    frameCount :: Int,
-    frameTime  :: Int,
-    paused     :: Bool,
-    debugMode  :: Bool,
-    pendingJump :: Bool,
-    jumpHeld   :: Bool,
-    sprintHeld :: Bool,
+    world        :: World,
+    player       :: Player,
+    entities     :: [Entity],
+    tileMap      :: TileMap,
+    tileSize     :: Int,
+    frameCount   :: Int,
+    frameTime    :: Int,
+    paused       :: Bool,
+    debugMode    :: Bool,
+    pendingJump  :: Bool,
+    jumpHeld     :: Bool,
+    sprintHeld   :: Bool,
     moveLeftHeld :: Bool,
     moveRightHeld :: Bool
   } deriving (Show)
+
+data MenuState = MenuState
+  { menuTileMap      :: TileMap
+  , menuPlayerSprite :: Picture
+  , menuDebugMode    :: Bool
+  }
+
+data AppState
+  = Menu MenuState
+  | Playing GameState
 
 
 -- Level geometry

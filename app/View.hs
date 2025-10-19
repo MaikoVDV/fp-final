@@ -17,11 +17,15 @@ withTileScale size pic =
   let s = tileScaleFactor size
   in scale s s pic
 
-view :: GameState -> IO Picture
+view :: AppState -> IO Picture
 view = return . viewPure
 
-viewPure :: GameState -> Picture
-viewPure gs =
+viewPure :: AppState -> Picture
+viewPure (Menu menuState) = renderMenu menuState
+viewPure (Playing gs) = viewGame gs
+
+viewGame :: GameState -> Picture
+viewGame gs =
   let tileSizeF = fromIntegral (tileSize gs)
       (px, py) = playerPos (player gs)
       camX = -px * tileSizeF
@@ -32,6 +36,27 @@ viewPure gs =
          , renderEntities (tileSize gs) gs
          , renderPlayer (tileSize gs) (player gs)
          ]
+
+renderMenu :: MenuState -> Picture
+renderMenu MenuState { menuDebugMode } =
+  let titleText =
+        color white $
+          translate (-260) 80 $
+            scale 0.35 0.35 $
+              text "FP Final"
+      promptText =
+        color white $
+          translate (-280) (-40) $
+            scale 0.2 0.2 $
+              text "Press Enter to start"
+      debugText
+        | menuDebugMode =
+            color yellow $
+              translate (-285) (-120) $
+                scale 0.16 0.16 $
+                  text "Debug mode enabled"
+        | otherwise = blank
+  in Pictures [titleText, promptText, debugText]
 
 renderWorld :: GameState -> Picture
 renderWorld GameState { world, tileMap, tileSize, player, entities, debugMode } =

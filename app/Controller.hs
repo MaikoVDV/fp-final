@@ -3,10 +3,12 @@ module Controller where
 import Model
 import qualified Model as M
 import Graphics.Gloss.Interface.IO.Game
+import Control.Monad (when)
 import Data.Maybe (mapMaybe, maybeToList, isJust)
 import qualified Collision
 import Data.List (find, nub)
 import Debug.Trace (trace)
+import InitialState (buildInitialGameState)
 
 gravityAcceleration :: Float
 gravityAcceleration = -35
@@ -46,32 +48,47 @@ airFrictionCoeff = 1.5
 upVector :: Vector
 upVector = (0, 1)
 
-input :: Event -> GameState -> IO GameState
-input e gs = return $ handleInput e gs
+input :: Event -> AppState -> IO AppState
+input e appState =
+  case appState of
+    Menu menuState  -> handleMenuInput e menuState
+    Playing gameState -> return . Playing $ handlePlayingInput e gameState
 
-handleInput :: Event -> GameState -> GameState
-handleInput (EventKey (SpecialKey KeyLeft)  Down _ _) gs = gs { moveLeftHeld = True }
-handleInput (EventKey (SpecialKey KeyRight) Down _ _) gs = gs { moveRightHeld = True }
-handleInput (EventKey (SpecialKey KeyLeft)  Up   _ _) gs = gs { moveLeftHeld = False }
-handleInput (EventKey (SpecialKey KeyRight) Up   _ _) gs = gs { moveRightHeld = False }
+handleMenuInput :: Event -> MenuState -> IO AppState
+handleMenuInput (EventKey (SpecialKey KeyEnter) Down _ _) menuState = startGame menuState
+handleMenuInput _ menuState = return (Menu menuState)
+
+startGame :: MenuState -> IO AppState
+startGame menuState = do
+  let gameState = buildInitialGameState (menuDebugMode menuState) (menuTileMap menuState) (menuPlayerSprite menuState)
+  when (menuDebugMode menuState) $
+    print (colliders (world gameState))
+  return (Playing gameState)
+
+handlePlayingInput :: Event -> GameState -> GameState
+handlePlayingInput (EventKey (SpecialKey KeyLeft)  Down _ _) gs = gs { moveLeftHeld = True }
+handlePlayingInput (EventKey (SpecialKey KeyRight) Down _ _) gs = gs { moveRightHeld = True }
+handlePlayingInput (EventKey (SpecialKey KeyLeft)  Up   _ _) gs = gs { moveLeftHeld = False }
+handlePlayingInput (EventKey (SpecialKey KeyRight) Up   _ _) gs = gs { moveRightHeld = False }
 -- Zoom controls
-handleInput (EventKey (Char '+') Down _ _) gs = adjustTileSize 1 gs
-handleInput (EventKey (Char '=') Down _ _) gs = adjustTileSize 1 gs
-handleInput (EventKey (Char '-') Down _ _) gs = adjustTileSize (-1) gs
-handleInput (EventKey (Char '_') Down _ _) gs = adjustTileSize (-1) gs
-handleInput (EventKey (SpecialKey KeyUp)    Down _ _) gs =
+handlePlayingInput (EventKey (Char '+') Down _ _) gs = adjustTileSize 1 gs
+handlePlayingInput (EventKey (Char '=') Down _ _) gs = adjustTileSize 1 gs
+handlePlayingInput (EventKey (Char '-') Down _ _) gs = adjustTileSize (-1) gs
+handlePlayingInput (EventKey (Char '_') Down _ _) gs = adjustTileSize (-1) gs
+handlePlayingInput (EventKey (SpecialKey KeyUp)    Down _ _) gs =
   gs { pendingJump = True, jumpHeld = True }
-handleInput (EventKey (SpecialKey KeyUp)    Up   _ _) gs =
+handlePlayingInput (EventKey (SpecialKey KeyUp)    Up   _ _) gs =
   gs { jumpHeld = False }
-handleInput (EventKey (SpecialKey KeyCtrlR) Down _ _) gs = gs { sprintHeld = True }
-handleInput (EventKey (SpecialKey KeyCtrlR) Up   _ _) gs = gs { sprintHeld = False }
-handleInput _ gs = gs
+handlePlayingInput (EventKey (SpecialKey KeyCtrlR) Down _ _) gs = gs { sprintHeld = True }
+handlePlayingInput (EventKey (SpecialKey KeyCtrlR) Up   _ _) gs = gs { sprintHeld = False }
+handlePlayingInput _ gs = gs
 
-update :: Float -> GameState -> IO GameState
-update dt gs = return $ updatePure dt gs
+update :: Float -> AppState -> IO AppState
+update _ menuState@(Menu _) = return menuState
+update dt (Playing gs) = return . Playing $ updateGame dt gs
 
-updatePure :: Float -> GameState -> GameState
-updatePure dt gs =
+updateGame :: Float -> GameState -> GameState
+updateGame dt gs =
   let updatedPlayer   = updatePlayer dt gs
       updatedEntities = map (updateEntity dt gs) (entities gs)
   in gs { player = updatedPlayer
