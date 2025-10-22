@@ -47,11 +47,6 @@ buildInitialGameState debugEnabled tileMap playerSpriteImage screenDims =
       emptyRow :: [Tile]
       emptyRow = replicate width Air
       placeRanges :: [Tile] -> [(Int, Int, Tile)] -> [Tile]
-      placeRanges row ranges =
-        foldl
-          (\acc (s, e, t) -> take s acc ++ replicate (e - s + 1) t ++ drop (e + 1) acc)
-          row
-          ranges
 
       skyRows = replicate 6 emptyRow
       upperPlatform = placeRanges emptyRow [ (4,6,Crate), (12,14,Crate), (20,23,Crate) ]
@@ -79,6 +74,8 @@ buildInitialGameState debugEnabled tileMap playerSpriteImage screenDims =
             }
       , goombaOnGround = False
       }
+      placeRanges = foldl
+          (\acc (s, e, t) -> take s acc ++ replicate (e - s + 1) t ++ drop (e + 1) acc)
   in GameState
       { world = worldState
       , player = initialPlayer
