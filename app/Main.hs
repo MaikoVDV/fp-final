@@ -7,38 +7,30 @@ import Model
 import View
 import Controller
 import Assets
+import System.Environment (getArgs)
+import Graphics.Gloss.Interface.Environment (getScreenSize)
 
 main :: IO ()
 main = do
+  args <- getArgs
   tileMap <- loadTileMap
   playerSprite <- loadPlayerSprite
+  screenSize <- getScreenSize
 
-  let initialPlayer = Player {
-    playerPos    = (18, 18 * 10),
-    playerVel    = (0, 0),
-    onGround     = False,
-    health       = 1,
-    playerSprite = [playerSprite]
-  }
-  let state = GameState {
-    world     = World 
-      {
-        grid = [[Crate, Crate], [Grass, Grass, Grass]],
-        slopes = []
-      },
-    entities  = [EPlayer initialPlayer],
-    tileSize  = 18,
-    tileMap   = tileMap,
-    frameCount = 0,
-    frameTime  = 30,
-    paused     = False
-  }
+  let debugEnabled = "debug" `elem` args
+      menuState = MenuState
+        { menuTileMap = tileMap
+        , menuPlayerSprite = playerSprite
+        , menuDebugMode = debugEnabled
+        , menuScreenSize = screenSize
+        }
+      initialState = Menu menuState
 
   playIO
-    (InWindow "Maiko & Sam's platformer" (800, 600) (100, 100))
-    white
+    FullScreen
+    (makeColorI 135 206 235 255)
     60
-    state
+    initialState
     view
     input
     update
