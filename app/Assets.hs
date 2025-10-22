@@ -5,6 +5,8 @@ import qualified Data.Map as Map
 import Model
 import Graphics.Gloss
 
+-- Load tile map from assets
+
 loadTileMap :: IO TileMap
 loadTileMap = do
   grassPic         <- loadBMP "assets/tiles/grass.bmp"
