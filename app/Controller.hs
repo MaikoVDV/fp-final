@@ -10,6 +10,8 @@ import Data.List (find, nub)
 import Debug.Trace (trace)
 import InitialState (buildInitialGameState)
 import System.Exit (exitSuccess)
+import System.Directory (createDirectoryIfMissing)
+import qualified LevelCodec
 
 gravityAcceleration :: Float
 gravityAcceleration = -35
@@ -54,6 +56,19 @@ upVector = (0, 1)
 
 input :: Event -> AppState -> IO AppState
 input (EventKey (SpecialKey KeyEsc) Down _ _) appState = exitSuccess >> return appState
+-- Ctrl+S quick-save current level to levels/quicksave.lvl
+input (EventKey (Char 's') Down _ _) (Playing gs) = do
+  putStrLn "[DEBUG] s pressed - saving level"
+  createDirectoryIfMissing True "levels"
+  LevelCodec.saveLevel "levels/quicksave.lvl" gs
+  putStrLn "Saved level to levels/quicksave.lvl"
+  return (Playing gs)
+input (EventKey (Char 'S') Down _ _) (Playing gs) = do
+  putStrLn "[DEBUG] S pressed - saving level"
+  createDirectoryIfMissing True "levels"
+  LevelCodec.saveLevel "levels/quicksave.lvl" gs
+  putStrLn "Saved level to levels/quicksave.lvl"
+  return (Playing gs)
 input e appState =
   case appState of
     Menu menuState  -> handleMenuInput e menuState
