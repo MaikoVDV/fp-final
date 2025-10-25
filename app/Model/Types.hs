@@ -1,5 +1,4 @@
-module Model where
-
+module Model.Types where
 import Graphics.Gloss
 import qualified Data.Map as Map
 
@@ -34,7 +33,6 @@ data AppState
   = Menu MenuState
   | Playing GameState
 
-
 -- Level geometry
 data World = World
   {
@@ -55,19 +53,18 @@ data SlopeData = SlopeData
     start :: Point,
     end   :: Point
   } deriving (Eq, Show)
-  
+
 type TileMap = Map.Map Tile Picture
 
 -- Entities
 data Entity
-  = EPlayer Player
-  | EGoomba Goomba
-  | EKoopa Koopa
-  | EPowerup
-  | EMovingPlatform
-  deriving (Show)
+  = EGoomba Int Goomba
+  | EKoopa Int Koopa
+  | EPowerup Int
+  | EMovingPlatform Int
+  deriving (Eq, Show)
 
-data Player = Player 
+data Player = Player
   {
     playerPos    :: Point,
     playerVel    :: Vector,
@@ -80,8 +77,9 @@ data Player = Player
     playerSlide :: Maybe Vector,
     playerAccelTime :: Float,
     playerAccelDir  :: Float,
-    playerAccelSprint :: Bool
-  } deriving (Show)
+    playerAccelSprint :: Bool,
+    playerCollisions :: [CollisionEvent]
+  } deriving (Eq, Show)
 
 data Goomba = Goomba
   {
@@ -89,27 +87,43 @@ data Goomba = Goomba
     goombaVel :: Vector,
     goombaDir :: MoveDir,
     goombaColliderSpec :: Maybe ColliderSpec,
-    goombaOnGround :: Bool
-  } deriving (Show)
+    goombaOnGround :: Bool,
+    goombaCollisions :: [CollisionEvent]
+  } deriving (Eq, Show)
 
 data Koopa = Koopa
   {
     koopaPos  :: Point,
     koopaVel  :: Vector,
     koopaDir  :: MoveDir,
-    koopaColliderSpec :: Maybe ColliderSpec
-  } deriving (Show)
+    koopaColliderSpec :: Maybe ColliderSpec,
+    koopaCollisions :: [CollisionEvent]
+  } deriving (Eq, Show)
 
 
 type Animation = [Picture]
 data MoveDir = Left | Right
   deriving (Eq, Show)
 
+-- AABB defined by position and size
+data Collider = AABB { aPos :: Point, aWidth :: Float, aHeight :: Float, tag :: ColliderTag }
+  deriving (Eq)
 
-  
--- Axis-aligned bounding box: position + size (half-extents or full size as you prefer)
-data Collider = AABB { aPos :: Point, aWidth :: Float, aHeight :: Float }
-  deriving (Eq, Show)
+instance Show Collider where
+  show AABB { tag } = show tag
+
+
+data ColliderTag = None | CTWorld (Int, Int) | CTPlayer Player | CTEntity Entity
+  deriving (Eq)
+
+instance Show ColliderTag where
+  show None             = "Untagged collider"
+  show (CTWorld (x, y)) = "World collider at (" ++ show x ++ ", " ++ show y ++ ")"
+  show (CTPlayer _)     = "Player colider"
+  show (CTEntity (EGoomba gId _)) = "Goomba colider {id: " ++ show gId ++ " }"
+  show (CTEntity (EKoopa  kId _)) = "Koopa  colider {id: " ++ show kId ++ " }"
+  show (CTEntity _)     = "Entity collider"
+
 
 data ColliderSpec = ColliderSpec
   { colliderWidth  :: Float
@@ -117,24 +131,29 @@ data ColliderSpec = ColliderSpec
   , colliderOffset :: Vector
   } deriving (Eq, Show)
 
-specToCollider :: Point -> ColliderSpec -> Collider
-specToCollider (cx, cy) ColliderSpec { colliderWidth, colliderHeight, colliderOffset = (ox, oy) } =
-  AABB (cx + ox, cy + oy) colliderWidth colliderHeight
+-- Data resulting from a collision check
+data CollisionFlags = CollisionFlags
+  { hitX           :: Bool
+  , hitY           :: Bool
+  , groundContact  :: Bool
+  , contactNormals :: [Vector]
+  } deriving (Eq, Show)
 
-playerCollider :: Player -> Maybe Collider
-playerCollider Player { playerPos, playerColliderSpec } =
-  specToCollider playerPos <$> playerColliderSpec
+data SweepResult
+  = SweepClear Point
+  | SweepHit
+      { safePos    :: Point
+      , hitPos     :: Point
+      , hitBlocker :: Collider
+      }
 
-goombaCollider :: Goomba -> Maybe Collider
-goombaCollider Goomba { goombaPos, goombaColliderSpec } =
-  specToCollider goombaPos <$> goombaColliderSpec
+data Axis = AxisX | AxisY deriving (Eq, Show)
 
-koopaCollider :: Koopa -> Maybe Collider
-koopaCollider Koopa { koopaPos, koopaColliderSpec } =
-  specToCollider koopaPos <$> koopaColliderSpec
+data CollisionEvent = CollisionEvent 
+  { colEventTag    :: ColliderTag
+  , colEventAxis   :: Axis
+  , colEventNormal :: Vector
+  } deriving (Eq, Show)
 
-entityCollider :: Entity -> Maybe Collider
-entityCollider (EPlayer p) = playerCollider p
-entityCollider (EGoomba g) = goombaCollider g
-entityCollider (EKoopa  k) = koopaCollider k
-entityCollider _           = Nothing
+upVector :: Vector
+upVector = (0, 1)

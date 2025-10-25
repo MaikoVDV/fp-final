@@ -14,11 +14,11 @@ import Data.Bits ((.&.), (.|.), shiftL, shiftR)
 import Data.Maybe (mapMaybe)
 
 import Graphics.Gloss (Picture)
-import Model ( GameState(..), World(..), Tile(..), TileMap
+import Model.Types ( GameState(..), World(..), Tile(..), TileMap
              , Player(..), Entity(..), Goomba(..), Koopa(..), ColliderSpec(..)
              )
-import qualified Model as M
-import qualified Collision as Collisions
+import qualified Model.Types as Types
+import Model.Collider
 
 -- Tile <-> id mapping (supports up to 16 tiles)
 tileId :: Tile -> Word8
@@ -64,8 +64,8 @@ saveLevel path gs = do
       pxi = packPos px
       pyi = packPos py
       -- Only save known enemy spawns we can reconstruct
-      encodeSpawn (EGoomba Goomba { goombaPos = (x,y) }) = Just (1 :: Word8, packPos x, packPos y)
-      encodeSpawn (EKoopa  Koopa  { koopaPos  = (x,y) }) = Just (2 :: Word8, packPos x, packPos y)
+      encodeSpawn (EGoomba 0 Goomba { goombaPos = (x,y) }) = Just (1 :: Word8, packPos x, packPos y)
+      encodeSpawn (EKoopa  0 Koopa  { koopaPos  = (x,y) }) = Just (2 :: Word8, packPos x, packPos y)
       encodeSpawn _ = Nothing
       spawns = mapMaybe encodeSpawn (entities gs)
 
@@ -111,15 +111,15 @@ loadLevel :: FilePath -> Bool -> TileMap -> Picture -> (Int, Int) -> IO GameStat
 loadLevel path debugEnabled tileMap playerSpriteImage screenDims = do
   bs <- BS.readFile path
   case parseLevel bs of
-    Left err -> ioError (userError ("Level load error: " ++ err))
-    Right (width, tiles1D, (px,py), spawns) -> do
+    Prelude.Left err -> ioError (userError ("Level load error: " ++ err))
+    Prelude.Right (width, tiles1D, (px,py), spawns) -> do
       let height :: Int
           height = if width == 0 then 0 else length tiles1D `div` width
           -- Rebuild grid row-major
           grid' = [ take width (drop (y*width) tiles1D) | y <- [0..height - 1] ]
           worldState = World
             { grid = grid'
-            , colliders = Collisions.generateCollidersForWorld grid'
+            , colliders = generateCollidersForWorld grid'
             , slopes = []
             }
           initialPlayer = Player
@@ -135,9 +135,10 @@ loadLevel path debugEnabled tileMap playerSpriteImage screenDims = do
             , playerAccelTime = 0
             , playerAccelDir  = 0
             , playerAccelSprint = False
+            , playerCollisions = []
             }
-          toEntity (1, x, y) = Just (EGoomba Goomba { goombaPos=(x,y), goombaVel=(0,0), goombaDir=M.Left, goombaColliderSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, goombaOnGround=False })
-          toEntity (2, x, y) = Just (EKoopa  Koopa  { koopaPos=(x,y),  koopaVel=(0,0), koopaDir=M.Left, koopaColliderSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) } })
+          toEntity (1, x, y) = Just (EGoomba 0 Goomba { goombaPos=(x,y), goombaVel=(0,0), goombaDir=Types.Left, goombaColliderSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, goombaOnGround=False, goombaCollisions = [] })
+          toEntity (2, x, y) = Just (EKoopa  0 Koopa  { koopaPos=(x,y),  koopaVel=(0,0), koopaDir=Types.Left, koopaColliderSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, koopaCollisions = [] })
           toEntity _         = Nothing
           entities' = mapMaybe toEntity spawns
       return GameState

@@ -1,14 +1,10 @@
-module InitialState
-  ( buildInitialGameState
-  , baseTilePixelSizeForScreen
-  , targetTilesHorizontal
-  ) where
+module Model.InitialState where
 
 import Graphics.Gloss (Picture)
 
-import Model
-import qualified Model as M
-import qualified Collision as Collisions
+import Model.Types
+import qualified Model.Types as Types
+import Model.Collider
 
 targetTilesHorizontal :: Float
 targetTilesHorizontal = 20
@@ -40,6 +36,7 @@ buildInitialGameState debugEnabled tileMap playerSpriteImage screenDims =
         , playerAccelTime = 0
         , playerAccelDir  = 0
         , playerAccelSprint = False
+        , playerCollisions = []
         }
 
       width :: Int
@@ -59,27 +56,40 @@ buildInitialGameState debugEnabled tileMap playerSpriteImage screenDims =
       worldState =
         World
           { grid = grid
-          , colliders = Collisions.generateCollidersForWorld grid
+          , colliders = generateCollidersForWorld grid
           , slopes = []
           }
 
-      goomba = EGoomba Goomba
+      goomba0 = EGoomba 0 Goomba
         { goombaPos = (fromIntegral (width - 5), 12)
         , goombaVel = (0, 0)
-        , goombaDir = M.Left
+        , goombaDir = Types.Left
         , goombaColliderSpec = Just ColliderSpec
             { colliderWidth = 0.9
             , colliderHeight = 0.9
             , colliderOffset = (0, 0)
             }
       , goombaOnGround = False
+      , goombaCollisions = []
+      }
+      goomba1 = EGoomba 1 Goomba
+        { goombaPos = (fromIntegral (width - 10), 12)
+        , goombaVel = (0, 0)
+        , goombaDir = Types.Left
+        , goombaColliderSpec = Just ColliderSpec
+            { colliderWidth = 0.9
+            , colliderHeight = 0.9
+            , colliderOffset = (0, 0)
+            }
+      , goombaOnGround = False
+      , goombaCollisions = []
       }
       placeRanges = foldl
           (\acc (s, e, t) -> take s acc ++ replicate (e - s + 1) t ++ drop (e + 1) acc)
   in GameState
       { world = worldState
       , player = initialPlayer
-      , entities = [goomba]
+      , entities = [goomba0, goomba1]
       , tileZoom = 1.0
       , screenSize = screenDims
       , tileMap = tileMap

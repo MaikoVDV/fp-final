@@ -2,7 +2,7 @@ module Assets where
 
 import qualified Data.Map as Map
 
-import Model
+import Model.Types
 import Graphics.Gloss
 
 -- Load tile map from assets

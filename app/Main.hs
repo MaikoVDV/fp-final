@@ -3,9 +3,10 @@ module Main where
 import Graphics.Gloss
 import Graphics.Gloss.Interface.IO.Game
 
-import Model
+import Model.Types
 import View
-import Controller
+import Controller.Update
+import Controller.Input
 import Assets
 import System.Environment (getArgs)
 import Graphics.Gloss.Interface.Environment (getScreenSize)
@@ -27,7 +28,8 @@ main = do
       initialState = Menu menuState
 
   playIO
-    FullScreen
+    --FullScreen
+    (InWindow "Maiko & Sam's platformer" (1000, 800) (100, 100))
     (makeColorI 135 206 235 255)
     60
     initialState

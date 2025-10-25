@@ -3,9 +3,10 @@ module View where
 import Graphics.Gloss
 import qualified Data.Map as Map
 import Data.Maybe (mapMaybe, maybeToList)
-import InitialState (baseTilePixelSizeForScreen)
 
-import Model
+import Model.Types
+import Model.Collider
+import Model.InitialState
 
 assetTilePixelSize :: Float
 assetTilePixelSize = 18
@@ -92,11 +93,10 @@ renderEntities :: Float -> GameState -> Picture
 renderEntities tilePixels GameState { entities } = Pictures $ map (renderEntity tilePixels) entities
 
 renderEntity :: Float -> Entity -> Picture
-renderEntity tilePixels (EPlayer p)     = renderPlayer tilePixels p
-renderEntity tilePixels (EGoomba g)     = renderGoomba tilePixels g
-renderEntity _        (EKoopa  k)     = renderKoopa  k
-renderEntity _        EPowerup        = blank
-renderEntity _        EMovingPlatform = blank
+renderEntity tilePixels (EGoomba _ g)       = renderGoomba tilePixels g
+renderEntity _          (EKoopa _ k)        = renderKoopa  k
+renderEntity _          (EPowerup _)        = blank
+renderEntity _          (EMovingPlatform _) = blank
 
 getTileSprite :: TileMap -> Tile -> Picture
 getTileSprite m t = Map.findWithDefault blank t m
@@ -122,7 +122,7 @@ renderKoopa :: Koopa -> Picture
 renderKoopa = undefined
 
 renderAABB :: Float -> Collider -> Picture
-renderAABB tileSize (AABB (x, y) w h) =
+renderAABB tileSize (AABB (x, y) w h _) =
   let xPixels = x * tileSize
       yPixels = y * tileSize
       halfW   = (w * tileSize) / 2

@@ -1,0 +1,133 @@
+module Controller.Input where
+
+import Graphics.Gloss.Interface.IO.Game
+import Control.Monad (when)
+import System.Exit (exitSuccess)
+import System.Directory (createDirectoryIfMissing)
+
+import Model.Types
+import Model.InitialState (buildInitialGameState)
+import qualified LevelCodec
+import MathUtils
+
+jumpImpulse :: Float
+jumpImpulse = 8
+
+jumpHoldAccelStart :: Float
+jumpHoldAccelStart = 44
+
+jumpHoldDuration :: Float
+jumpHoldDuration = 0.5
+
+-- Zoom bounds for tile scaling
+minTileZoom, maxTileZoom :: Float
+minTileZoom = 0.5
+maxTileZoom = 2.0
+
+zoomStep :: Float
+zoomStep = 0.1
+
+input :: Event -> AppState -> IO AppState
+input (EventKey (SpecialKey KeyEsc) Down _ _) appState = exitSuccess >> return appState
+-- Ctrl+S quick-save current level to levels/quicksave.lvl
+input (EventKey (Char 's') Down _ _) (Playing gs) = do
+  putStrLn "[DEBUG] s pressed - saving level"
+  createDirectoryIfMissing True "levels"
+  LevelCodec.saveLevel "levels/quicksave.lvl" gs
+  putStrLn "Saved level to levels/quicksave.lvl"
+  return (Playing gs)
+input (EventKey (Char 'S') Down _ _) (Playing gs) = do
+  putStrLn "[DEBUG] S pressed - saving level"
+  createDirectoryIfMissing True "levels"
+  LevelCodec.saveLevel "levels/quicksave.lvl" gs
+  putStrLn "Saved level to levels/quicksave.lvl"
+  return (Playing gs)
+input e appState =
+  case appState of
+    Menu menuState  -> handleMenuInput e menuState
+    Playing gameState -> return . Playing $ handlePlayingInput e gameState
+
+handleMenuInput :: Event -> MenuState -> IO AppState
+handleMenuInput (EventKey (SpecialKey KeyEnter) Down _ _) menuState = startGame menuState
+handleMenuInput _ menuState = return (Menu menuState)
+
+startGame :: MenuState -> IO AppState
+startGame menuState = do
+  let gameState =
+        buildInitialGameState
+          (menuDebugMode menuState)
+          (menuTileMap menuState)
+          (menuPlayerSprite menuState)
+          (menuScreenSize menuState)
+  when (menuDebugMode menuState) $
+    print (colliders (world gameState))
+  return (Playing gameState)
+
+handlePlayingInput :: Event -> GameState -> GameState
+handlePlayingInput (EventKey (SpecialKey KeyLeft)  Down _ _) gs = gs { moveLeftHeld = True }
+handlePlayingInput (EventKey (SpecialKey KeyRight) Down _ _) gs = gs { moveRightHeld = True }
+handlePlayingInput (EventKey (SpecialKey KeyLeft)  Up   _ _) gs = gs { moveLeftHeld = False }
+handlePlayingInput (EventKey (SpecialKey KeyRight) Up   _ _) gs = gs { moveRightHeld = False }
+-- Zoom controls
+handlePlayingInput (EventKey (Char '+') Down _ _) gs = adjustTileZoom zoomStep gs
+handlePlayingInput (EventKey (Char '=') Down _ _) gs = adjustTileZoom zoomStep gs
+handlePlayingInput (EventKey (Char '-') Down _ _) gs = adjustTileZoom (-zoomStep) gs
+handlePlayingInput (EventKey (Char '_') Down _ _) gs = adjustTileZoom (-zoomStep) gs
+handlePlayingInput (EventKey (SpecialKey KeyUp)    Down _ _) gs =
+  gs { pendingJump = True, jumpHeld = True }
+handlePlayingInput (EventKey (SpecialKey KeyUp)    Up   _ _) gs =
+  gs { jumpHeld = False }
+handlePlayingInput (EventKey (SpecialKey KeyCtrlR) Down _ _) gs = gs { sprintHeld = True }
+handlePlayingInput (EventKey (SpecialKey KeyCtrlR) Up   _ _) gs = gs { sprintHeld = False }
+handlePlayingInput _ gs = gs
+
+
+computeJumpHold :: Float -> GameState -> Player -> (Vector, Float)
+computeJumpHold dt gs Player { playerJumpTime = t0, onGround = grounded, playerJumpDir = initDir }
+  | not (jumpHeld gs)        = ((0, 0), jumpHoldDuration)
+  | grounded                 = ((0, 0), jumpHoldDuration)
+  | t0 >= jumpHoldDuration   = ((0, 0), jumpHoldDuration)
+  | otherwise =
+      let startTime   = clampInterval t0
+          endTime     = min jumpHoldDuration (startTime + dt)
+          accelStart  = jumpHoldValue startTime
+          accelEnd    = jumpHoldValue endTime
+          dirStart    = jumpDirectionAt initDir startTime
+          dirEnd      = jumpDirectionAt initDir endTime
+          accelVecStart = scaleVec dirStart accelStart
+          accelVecEnd   = scaleVec dirEnd   accelEnd
+          avgAccelVec   = scaleVec (addVec accelVecStart accelVecEnd) 0.5
+      in (avgAccelVec, endTime)
+  where
+    clampInterval t = max 0 (min jumpHoldDuration t)
+
+jumpHoldValue :: Float -> Float
+jumpHoldValue t
+  | jumpHoldDuration <= 0 = 0
+  | otherwise =
+      let factor = max 0 (1 - t / jumpHoldDuration)
+      in jumpHoldAccelStart * factor
+
+jumpDirectionAt :: Vector -> Float -> Vector
+jumpDirectionAt initDir t
+  | jumpHoldDuration <= 0 = upVector
+  | otherwise =
+      let alpha = clamp01 (t / jumpHoldDuration)
+          blended = addVec (scaleVec initDir (1 - alpha)) (scaleVec upVector alpha)
+      in normalizeVec blended
+
+-- Adjust zoom by changing tileZoom, clamped to [minTileZoom, maxTileZoom]
+adjustTileZoom :: Float -> GameState -> GameState
+adjustTileZoom delta gs =
+  let cur = tileZoom gs
+      newVal = clampTileZoom (cur + delta)
+  in gs { tileZoom = newVal }
+
+clampTileZoom :: Float -> Float
+clampTileZoom n = max minTileZoom (min maxTileZoom n)
+
+clamp01 :: Float -> Float
+clamp01 x
+  | x < 0     = 0
+  | x > 1     = 1
+  | otherwise = x
