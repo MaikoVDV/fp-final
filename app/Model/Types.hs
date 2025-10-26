@@ -4,27 +4,24 @@ import qualified Data.Map as Map
 
 -- GameState
 data GameState = GameState
-  {
-    world        :: World,
-    player       :: Player,
-    entities     :: [Entity],
-    tileMap      :: TileMap,
-    tileZoom     :: Float,
-    screenSize   :: (Int, Int),
-    frameCount   :: Int,
-    frameTime    :: Int,
-    paused       :: Bool,
-    debugMode    :: Bool,
-    pendingJump  :: Bool,
-    jumpHeld     :: Bool,
-    sprintHeld   :: Bool,
-    moveLeftHeld :: Bool,
-    moveRightHeld :: Bool
+  { world           :: World
+  , player          :: Player
+  , entities        :: [Entity]
+  , entityIdCounter :: Int
+  , tileMap         :: TileMap
+  , animMap         :: AnimMap
+  , tileZoom        :: Float
+  , screenSize      :: (Int, Int)
+  , frameCount      :: Int
+  , paused          :: Bool
+  , debugMode       :: Bool
+  , pendingJump     :: Bool
+  , jumpHeld        :: Bool
+  , sprintHeld      :: Bool
   } deriving (Show)
 
 data MenuState = MenuState
-  { menuTileMap      :: TileMap
-  , menuPlayerSprite :: Picture
+  { menuPlayerAnim   :: Animation
   , menuDebugMode    :: Bool
   , menuScreenSize   :: (Int, Int)
   }
@@ -45,7 +42,9 @@ data Tile
   = Air
   | Grass
   | Crate
-  | QuestionBlock
+  | MetalBox
+  | QuestionBlockFull
+  | QuestionBlockEmpty
   deriving (Eq, Ord, Show)
 
 data SlopeData = SlopeData
@@ -55,51 +54,78 @@ data SlopeData = SlopeData
   } deriving (Eq, Show)
 
 type TileMap = Map.Map Tile Picture
+type AnimMap = Map.Map EntityType Animation
 
 -- Entities
 data Entity
   = EGoomba Int Goomba
   | EKoopa Int Koopa
-  | EPowerup Int
-  | EMovingPlatform Int
+  | EPowerup Int Powerup
+  | EPlatform Int
   deriving (Eq, Show)
 
+-- Used as a bridge between entity data and animations
+data EntityType
+  = TGoomba
+  | TKoopa
+  | TPowerup
+  | TPlatform
+  deriving (Eq, Ord, Show)
+
+instance Ord Entity where
+  e1 <= e2 = getEntityId e1 <= getEntityId e2
+
+-- Function must be defined in this file because the instance of Ord for Entity uses it
+getEntityId :: Entity -> Int
+getEntityId (EGoomba   gId  _) = gId
+getEntityId (EKoopa    kId  _) = kId
+getEntityId (EPowerup  puId _) = puId
+getEntityId (EPlatform pfId  ) = pfId
+
+
 data Player = Player
-  {
-    playerPos    :: Point,
-    playerVel    :: Vector,
-    onGround     :: Bool,
-    playerSprite :: Animation,
-    health       :: Int,
-    playerColliderSpec :: Maybe ColliderSpec,
-    playerJumpTime :: Float,
-    playerJumpDir  :: Vector,
-    playerSlide :: Maybe Vector,
-    playerAccelTime :: Float,
-    playerAccelDir  :: Float,
-    playerAccelSprint :: Bool,
-    playerCollisions :: [CollisionEvent]
+  { playerPos    :: Point
+  , playerVel    :: Vector
+  , playerAnim   :: Animation
+  , onGround     :: Bool
+  , health       :: Int
+  , playerColSpec :: Maybe ColliderSpec
+  , playerJumpTime :: Float
+  , playerJumpDir  :: Vector
+  , playerSlide :: Maybe Vector
+  , playerAccelTime :: Float
+  , playerAccelDir  :: Float
+  , playerAccelSprint :: Bool
+  , playerCollisions :: [CollisionEvent]
+  , moveLeftHeld    :: Bool
+  , moveRightHeld   :: Bool
+  , lastMoveDir     :: Float
   } deriving (Eq, Show)
 
 data Goomba = Goomba
-  {
-    goombaPos :: Point,
-    goombaVel :: Vector,
-    goombaDir :: MoveDir,
-    goombaColliderSpec :: Maybe ColliderSpec,
-    goombaOnGround :: Bool,
-    goombaCollisions :: [CollisionEvent]
+  { goombaPos :: Point
+  , goombaVel :: Vector
+  , goombaDir :: MoveDir
+  , goombaColSpec :: Maybe ColliderSpec
+  , goombaOnGround :: Bool
+  , goombaCollisions :: [CollisionEvent]
   } deriving (Eq, Show)
 
 data Koopa = Koopa
-  {
-    koopaPos  :: Point,
-    koopaVel  :: Vector,
-    koopaDir  :: MoveDir,
-    koopaColliderSpec :: Maybe ColliderSpec,
-    koopaCollisions :: [CollisionEvent]
+  { koopaPos  :: Point
+  , koopaVel  :: Vector
+  , koopaDir  :: MoveDir
+  , koopaColSpec :: Maybe ColliderSpec
+  , koopaCollisions :: [CollisionEvent]
   } deriving (Eq, Show)
 
+data Powerup = Powerup
+  { powerupPos  :: Point
+  , powerupVel  :: Vector
+  , powerupDir  :: MoveDir
+  , powerupColSpec :: Maybe ColliderSpec
+  , powerupCollisions :: [CollisionEvent]
+  } deriving (Eq, Show)
 
 type Animation = [Picture]
 data MoveDir = Left | Right
@@ -113,16 +139,14 @@ instance Show Collider where
   show AABB { tag } = show tag
 
 
-data ColliderTag = None | CTWorld (Int, Int) | CTPlayer Player | CTEntity Entity
+data ColliderTag = None | CTWorld (Int, Int) | CTPlayer Player | CTEntity Int
   deriving (Eq)
 
 instance Show ColliderTag where
   show None             = "Untagged collider"
   show (CTWorld (x, y)) = "World collider at (" ++ show x ++ ", " ++ show y ++ ")"
   show (CTPlayer _)     = "Player colider"
-  show (CTEntity (EGoomba gId _)) = "Goomba colider {id: " ++ show gId ++ " }"
-  show (CTEntity (EKoopa  kId _)) = "Koopa  colider {id: " ++ show kId ++ " }"
-  show (CTEntity _)     = "Entity collider"
+  show (CTEntity gId)   = "Entity colider {id: " ++ show gId ++ " }"
 
 
 data ColliderSpec = ColliderSpec
@@ -149,11 +173,8 @@ data SweepResult
 
 data Axis = AxisX | AxisY deriving (Eq, Show)
 
-data CollisionEvent = CollisionEvent 
+data CollisionEvent = CollisionEvent
   { colEventTag    :: ColliderTag
   , colEventAxis   :: Axis
   , colEventNormal :: Vector
   } deriving (Eq, Show)
-
-upVector :: Vector
-upVector = (0, 1)

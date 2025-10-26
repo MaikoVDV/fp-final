@@ -1,10 +1,10 @@
 module Model.InitialState where
 
-import Graphics.Gloss (Picture)
-
 import Model.Types
 import qualified Model.Types as Types
 import Model.Collider
+import Assets 
+import Model.Entity (defaultGoomba, defaultPlayer)
 
 targetTilesHorizontal :: Float
 targetTilesHorizontal = 20
@@ -17,89 +17,58 @@ baseTilePixelSizeForScreen (screenWidth, screenHeight) =
   let aspect = fromIntegral screenWidth / max 1 (fromIntegral screenHeight)
   in (fromIntegral screenHeight * aspect / targetTilesHorizontal) * tilePixelSizeScale
 
-buildInitialGameState :: Bool -> TileMap -> Picture -> (Int, Int) -> GameState
-buildInitialGameState debugEnabled tileMap playerSpriteImage screenDims =
-  let initialPlayer = Player
-        { playerPos    = (1, 0)
-        , playerVel    = (0, 0)
-        , onGround     = False
-        , health       = 1
-        , playerSprite = [playerSpriteImage]
-        , playerColliderSpec = Just ColliderSpec
-            { colliderWidth  = 0.6
-            , colliderHeight = 0.75
-            , colliderOffset = (0, 0)
+buildInitialGameState :: Bool -> (Int, Int) -> IO GameState
+buildInitialGameState debugEnabled screenDims = do
+    tileMap         <- loadTileMap
+    animMap         <- loadAnimMap
+    playerAnimation <- loadPlayerAnimation
+    let initialPlayer = defaultPlayer {
+      playerPos = (1, 0),
+      playerAnim = playerAnimation
+    }
+        width = 30
+        emptyRow = replicate width Air
+
+        skyRows = replicate 6 emptyRow
+        topBoxes      = placeRanges emptyRow [ (4,6,QuestionBlockFull) ]
+        upperPlatform = placeRanges emptyRow [ (3,3,MetalBox),(4,6,Crate),(7,7,MetalBox),(11,11,MetalBox),(12,14,Crate),(15,15,MetalBox),(19,19,MetalBox),(20,23,Crate),(24,24,MetalBox) ]
+        midAirRow     = placeRanges emptyRow [ (8,8,QuestionBlockFull) ]
+        lowerPlatform = placeRanges emptyRow [ (2,4,Crate), (15,18,Crate), (26,27,Crate) ]
+        subGroundRow  = placeRanges (replicate width Grass) [ (0,2,Crate), (18,20,Crate) ]
+        groundRow     = replicate width Grass
+        grid = skyRows ++ [topBoxes, emptyRow, emptyRow, upperPlatform, midAirRow, emptyRow, lowerPlatform, subGroundRow, groundRow]
+
+        worldState =
+          World
+            { grid = grid
+            , colliders = generateCollidersForWorld grid
+            , slopes = []
             }
-        , playerJumpTime = 0
-        , playerJumpDir  = (0, 1)
-        , playerSlide = Nothing
-        , playerAccelTime = 0
-        , playerAccelDir  = 0
-        , playerAccelSprint = False
-        , playerCollisions = []
-        }
 
-      width :: Int
-      width = 30
-      emptyRow :: [Tile]
-      emptyRow = replicate width Air
-      placeRanges :: [Tile] -> [(Int, Int, Tile)] -> [Tile]
-
-      skyRows = replicate 6 emptyRow
-      upperPlatform = placeRanges emptyRow [ (4,6,Crate), (12,14,Crate), (20,23,Crate) ]
-      midAirRow     = placeRanges emptyRow [ (8,8,QuestionBlock), (21,21,QuestionBlock) ]
-      lowerPlatform = placeRanges emptyRow [ (2,4,Crate), (15,18,Crate), (26,27,Crate) ]
-      subGroundRow  = placeRanges (replicate width Grass) [ (0,2,Crate), (18,20,Crate) ]
-      groundRow     = replicate width Grass
-      grid = skyRows ++ [upperPlatform, midAirRow, lowerPlatform, subGroundRow, groundRow]
-
-      worldState =
-        World
-          { grid = grid
-          , colliders = generateCollidersForWorld grid
-          , slopes = []
+        goomba0 = EGoomba 0 defaultGoomba
+          { goombaPos = (fromIntegral (width - 5), -5)
+          , goombaDir = Types.Left
           }
-
-      goomba0 = EGoomba 0 Goomba
-        { goombaPos = (fromIntegral (width - 5), 12)
-        , goombaVel = (0, 0)
-        , goombaDir = Types.Left
-        , goombaColliderSpec = Just ColliderSpec
-            { colliderWidth = 0.9
-            , colliderHeight = 0.9
-            , colliderOffset = (0, 0)
-            }
-      , goombaOnGround = False
-      , goombaCollisions = []
-      }
-      goomba1 = EGoomba 1 Goomba
-        { goombaPos = (fromIntegral (width - 10), 12)
-        , goombaVel = (0, 0)
-        , goombaDir = Types.Left
-        , goombaColliderSpec = Just ColliderSpec
-            { colliderWidth = 0.9
-            , colliderHeight = 0.9
-            , colliderOffset = (0, 0)
-            }
-      , goombaOnGround = False
-      , goombaCollisions = []
-      }
-      placeRanges = foldl
-          (\acc (s, e, t) -> take s acc ++ replicate (e - s + 1) t ++ drop (e + 1) acc)
-  in GameState
+        goomba1 = EGoomba 1 defaultGoomba
+          { goombaPos = (fromIntegral (width - 10), -5)
+          , goombaDir = Types.Left
+          }
+        placeRanges :: [Tile] -> [(Int, Int, Tile)] -> [Tile]
+        placeRanges = foldl
+            (\acc (s, e, t) -> take s acc ++ replicate (e - s + 1) t ++ drop (e + 1) acc)
+    return $ GameState
       { world = worldState
       , player = initialPlayer
       , entities = [goomba0, goomba1]
+      , entityIdCounter = 2
       , tileZoom = 1.0
       , screenSize = screenDims
       , tileMap = tileMap
+      , animMap = animMap
       , frameCount = 0
-      , frameTime = 30
       , paused = False
       , debugMode = debugEnabled
       , pendingJump = False
       , jumpHeld = False
       , sprintHeld = False
-      , moveLeftHeld = False
-      , moveRightHeld = False
       }

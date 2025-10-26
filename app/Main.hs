@@ -14,14 +14,12 @@ import Graphics.Gloss.Interface.Environment (getScreenSize)
 main :: IO ()
 main = do
   args <- getArgs
-  tileMap <- loadTileMap
-  playerSprite <- loadPlayerSprite
+  playerAnim <- loadPlayerAnimation
   screenSize <- getScreenSize
 
   let debugEnabled = "debug" `elem` args
       menuState = MenuState
-        { menuTileMap = tileMap
-        , menuPlayerSprite = playerSprite
+        { menuPlayerAnim = playerAnim
         , menuDebugMode = debugEnabled
         , menuScreenSize = screenSize
         }

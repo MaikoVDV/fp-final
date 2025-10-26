@@ -13,25 +13,30 @@ import Data.Word (Word8, Word16, Word32)
 import Data.Bits ((.&.), (.|.), shiftL, shiftR)
 import Data.Maybe (mapMaybe)
 
-import Graphics.Gloss (Picture)
 import Model.Types ( GameState(..), World(..), Tile(..), TileMap
              , Player(..), Entity(..), Goomba(..), Koopa(..), ColliderSpec(..)
+             , Animation
              )
 import qualified Model.Types as Types
 import Model.Collider
+import Assets
+import Model.Entity
 
 -- Tile <-> id mapping (supports up to 16 tiles)
 tileId :: Tile -> Word8
-tileId Air           = 0
-tileId Grass         = 1
-tileId Crate         = 2
-tileId QuestionBlock = 3
+tileId Air                = 0
+tileId Grass              = 1
+tileId Crate              = 2
+tileId MetalBox           = 3
+tileId QuestionBlockFull  = 4
+tileId QuestionBlockEmpty = 5
 
 tileFromId :: Word8 -> Maybe Tile
 tileFromId 0 = Just Air
 tileFromId 1 = Just Grass
 tileFromId 2 = Just Crate
-tileFromId 3 = Just QuestionBlock
+tileFromId 3 = Just QuestionBlockFull
+tileFromId 4 = Just QuestionBlockEmpty
 tileFromId _ = Nothing
 
 -- Fixed-point for positions: store tile units * 256 in Int16
@@ -107,9 +112,10 @@ saveLevel path gs = do
   BL.writeFile path (BB.toLazyByteString b)
 
 -- Load a level and construct a GameState using supplied resources and config
-loadLevel :: FilePath -> Bool -> TileMap -> Picture -> (Int, Int) -> IO GameState
-loadLevel path debugEnabled tileMap playerSpriteImage screenDims = do
+loadLevel :: FilePath -> Bool -> TileMap -> Animation -> (Int, Int) -> IO GameState
+loadLevel path debugEnabled tileMap playerAnimation screenDims = do
   bs <- BS.readFile path
+  animMap <- loadAnimMap
   case parseLevel bs of
     Prelude.Left err -> ioError (userError ("Level load error: " ++ err))
     Prelude.Right (width, tiles1D, (px,py), spawns) -> do
@@ -122,41 +128,34 @@ loadLevel path debugEnabled tileMap playerSpriteImage screenDims = do
             , colliders = generateCollidersForWorld grid'
             , slopes = []
             }
-          initialPlayer = Player
+          initialPlayer = defaultPlayer
             { playerPos    = (px, py)
-            , playerVel    = (0, 0)
-            , onGround     = False
-            , health       = 1
-            , playerSprite = [playerSpriteImage]
-            , playerColliderSpec = Just ColliderSpec { colliderWidth = 0.6, colliderHeight = 0.75, colliderOffset = (0,0) }
-            , playerJumpTime = 0
-            , playerJumpDir  = (0,1)
-            , playerSlide    = Nothing
-            , playerAccelTime = 0
-            , playerAccelDir  = 0
-            , playerAccelSprint = False
-            , playerCollisions = []
+            , playerAnim   = playerAnimation
             }
-          toEntity (1, x, y) = Just (EGoomba 0 Goomba { goombaPos=(x,y), goombaVel=(0,0), goombaDir=Types.Left, goombaColliderSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, goombaOnGround=False, goombaCollisions = [] })
-          toEntity (2, x, y) = Just (EKoopa  0 Koopa  { koopaPos=(x,y),  koopaVel=(0,0), koopaDir=Types.Left, koopaColliderSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, koopaCollisions = [] })
+          -- Entities hebben net als player ook sprites, denk niet dat het handig is om die allemaal aan loadLevel te passen.
+          -- We hebben sws nog niet echt een goed systeem voor sprites en animations laden, dus dat moeten we nog ff bedenken
+          -- op n manier dat het ook goed werkt met de levelcodec
+          toEntity (1, x, y) = Just (EGoomba 0 Goomba { goombaPos=(x,y), goombaVel=(0,0), goombaDir=Types.Left, goombaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, goombaOnGround=False, goombaCollisions = [] })
+          toEntity (2, x, y) = Just (EKoopa  0 Koopa  { koopaPos=(x,y),  koopaVel=(0,0), koopaDir=Types.Left, koopaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, koopaCollisions = [] })
           toEntity _         = Nothing
           entities' = mapMaybe toEntity spawns
       return GameState
         { world = worldState
         , player = initialPlayer
         , entities = entities'
+        , animMap  = animMap
+        -- Elke entity heeft n unieke ID nodig, deze telt op als er een entity gespawnd wordt. Miss kan je 
+        -- in de mapMaybe bij entities' berekenen wat entityIdCounter moet zijn (hoogste id die al in gebruik is + 1 bijvoorbeeld?)
+        , entityIdCounter = 0 
         , tileZoom = 1.0
         , screenSize = screenDims
         , tileMap = tileMap
         , frameCount = 0
-        , frameTime = 30
         , paused = False
         , debugMode = debugEnabled
         , pendingJump = False
         , jumpHeld = False
         , sprintHeld = False
-        , moveLeftHeld = False
-        , moveRightHeld = False
         }
 
 -- Parser for the level format

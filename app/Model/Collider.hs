@@ -11,22 +11,27 @@ specToCollider (cx, cy) colliderTag ColliderSpec { colliderWidth, colliderHeight
 
 -- Returns the player's Collider
 playerCollider :: Player -> Maybe Collider
-playerCollider p@Player { playerPos, playerColliderSpec } =
-  specToCollider playerPos (CTPlayer p) <$> playerColliderSpec
+playerCollider p@Player { playerPos, playerColSpec } =
+  specToCollider playerPos (CTPlayer p) <$> playerColSpec
 
 -- Returns the Colider of an entity (Handled separately given entity type)
 entityCollider :: Entity -> Maybe Collider
-entityCollider (EGoomba gId g) = goombaCollider gId g
-entityCollider (EKoopa  kId k) = koopaCollider kId k
-entityCollider _           = Nothing
+entityCollider (EGoomba  gId  g)  = goombaCollider  gId g
+entityCollider (EKoopa   kId  k)  = koopaCollider   kId k
+entityCollider (EPowerup puId pu) = powerupCollider puId pu
+entityCollider _                  = Nothing
 
 goombaCollider :: Int -> Goomba -> Maybe Collider
-goombaCollider gId g@Goomba { goombaPos, goombaColliderSpec } =
-  specToCollider goombaPos (CTEntity (EGoomba gId g)) <$> goombaColliderSpec
+goombaCollider gId Goomba { goombaPos, goombaColSpec } =
+  specToCollider goombaPos (CTEntity gId) <$> goombaColSpec
 
 koopaCollider :: Int -> Koopa -> Maybe Collider
-koopaCollider kId k@Koopa { koopaPos, koopaColliderSpec } =
-  specToCollider koopaPos (CTEntity (EKoopa kId k)) <$> koopaColliderSpec
+koopaCollider kId Koopa { koopaPos, koopaColSpec } =
+  specToCollider koopaPos (CTEntity kId) <$> koopaColSpec
+
+powerupCollider :: Int -> Powerup -> Maybe Collider
+powerupCollider puId Powerup { powerupPos, powerupColSpec } =
+  specToCollider powerupPos (CTEntity puId) <$> powerupColSpec
 
 -- simple AABB vs AABB overlap test (treat widths/heights as full sizes)
 collides :: Collider -> Collider -> Bool

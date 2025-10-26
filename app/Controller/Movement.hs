@@ -18,14 +18,18 @@ applyMovement :: Float -> [Collider] -> GameState -> Vector -> Player -> Player
 applyMovement dt blockers gs jumpAccel p@Player 
   { playerPos = pos
   , playerVel = vel
-  , playerColliderSpec
+  , playerColSpec
   , playerSlide = prevSlide
+  , moveLeftHeld
+  , moveRightHeld
+  , lastMoveDir
   } =
   let -- Calulate desired acceleration
     gravityAccel = (0, gravityAcceleration)
-    moveDirRaw = boolToDir (moveLeftHeld gs) (moveRightHeld gs)
+    moveDirRaw = boolToDir moveLeftHeld moveRightHeld
     boolToDir left right = (if right then 1.0 else 0.0) - (if left then 1.0 else 0.0)
     moveDir = clampInput moveDirRaw
+    newMoveDir = if moveDir == 0 then lastMoveDir else moveDir
     controlAccel =
       if moveDir == 0
         then (0, 0)
@@ -52,7 +56,7 @@ applyMovement dt blockers gs jumpAccel p@Player
     -- If player has a collider, resolve movement to prevent collider overlap
     -- else, simply move the player along the desired displacement
     (resolvedPos, flags, events) =
-      case playerColliderSpec of
+      case playerColSpec of
         Nothing   -> (addVecToPoint pos displacement, noCollisionFlags, [])
         Just spec -> 
           let collider = specToCollider pos (CTPlayer p) spec
@@ -74,6 +78,7 @@ applyMovement dt blockers gs jumpAccel p@Player
        , onGround = onGround'
        , playerSlide = newSlide
        , playerCollisions = events
+       , lastMoveDir = newMoveDir
        }
   where 
     clampInput :: Float -> Float
@@ -87,7 +92,7 @@ applyMovement dt blockers gs jumpAccel p@Player
       case find isWallNormal contacts of
         Just wall -> Just wall
         Nothing   ->
-          case (playerColliderSpec, prevSlide) of
+          case (playerColSpec, prevSlide) of
             (Just s, Just normal)
               | isWallNormal normal
               , stillTouching s normal -> Just normal

@@ -2,7 +2,6 @@ module Controller.Update where
 
 import Graphics.Gloss
 import Data.Maybe (mapMaybe, maybeToList, isJust)
-import Debug.Trace
 
 import Model.Types
 import qualified Model.Types as Types
@@ -16,19 +15,20 @@ import Controller.Movement
 import MathUtils
 
 update :: Float -> AppState -> IO AppState
-update _ menuState@(Menu _) = return menuState
-update dt (Playing gs) = return . Playing $ updateGame dt gs
+update _  menuState@(Menu _) = return menuState
+update dt (Playing gs)       = return . Playing $ updateGame dt gs
 
 updateGame :: Float -> GameState -> GameState
 updateGame dt gs =
   let updatedPlayer   = updatePlayer dt gs
       updatedEntities = map (updateEntity dt gs) (entities gs)
-      updatedState = gs { player = updatedPlayer
+      updatedState = gs 
+        { player = updatedPlayer
         , entities = updatedEntities
         , pendingJump = False
         }
       finalState = handleCollisionEvents updatedState
-  in finalState
+  in finalState { frameCount = frameCount gs + 1 }
 
 updatePlayer :: Float -> GameState -> Player
 updatePlayer dt gs =
@@ -70,17 +70,19 @@ updatePlayer dt gs =
 
 -- Handle updating different types of entities separately
 updateEntity :: Float -> GameState -> Entity -> Entity
-updateEntity dt gs (EGoomba gId g) = EGoomba gId (updateGoomba dt gs gId g)
-updateEntity _  _  (EKoopa  kId k) = EKoopa  kId k
+updateEntity dt gs (EGoomba  gId  g)  = EGoomba  gId  (updateGoomba  dt gs gId  g)
+updateEntity _  _  (EKoopa   kId  k)  = EKoopa   kId  k
+updateEntity dt gs (EPowerup puId pu) = EPowerup puId (updatePowerup dt gs puId pu)
 updateEntity _  _  e             = e
 
 updateGoomba :: Float -> GameState -> Int -> Goomba -> Goomba
-updateGoomba dt gs gId g@Goomba { goombaPos = pos
-                            , goombaVel = vel
-                            , goombaColliderSpec = mSpec
-                            , goombaDir = dir
-                            } =
-  case mSpec of
+updateGoomba dt gs gId g@Goomba 
+  { goombaPos = pos
+  , goombaVel = vel
+  , goombaColSpec = colSpec
+  , goombaDir = dir
+  } =
+  case colSpec of
     Nothing ->
       let velAfterAccel = addVec vel (scaleVec totalAccel dt)
           velLimited    = clampGoombaVelocity velAfterAccel
@@ -92,7 +94,7 @@ updateGoomba dt gs gId g@Goomba { goombaPos = pos
       let velAfterAccel   = addVec vel (scaleVec totalAccel dt)
           displacement    = scaleVec velAfterAccel dt
           blockers        = colliders (world gs) ++ maybeToList (playerCollider (player gs))
-          collider        = specToCollider pos (CTEntity (EGoomba gId g)) spec
+          collider        = specToCollider pos (CTEntity gId) spec
           (resolvedPos, flags, events) = resolveMovement collider pos displacement blockers
           velAfterCollision    = applyCollisionFlags flags velAfterAccel
           contactDrag          = contactFrictionAccel (contactNormals flags) velAfterCollision
@@ -107,7 +109,8 @@ updateGoomba dt gs gId g@Goomba { goombaPos = pos
           newDirBase           = if hitWall then flipDir dir else dir
           newDir               =
             if hitWall
-              then trace ("[DEBUG] Goomba wall collision at " ++ show resolvedPos ++ "\n") newDirBase
+              --then trace ("[DEBUG] Goomba (id: " ++ show gId ++ ") wall collision at " ++ show resolvedPos ++ "\n") newDirBase
+              then  newDirBase
               else newDirBase
           adjVx                = if hitWall then 0 else fst velLimited
           velFinal             = (adjVx, snd velLimited)
@@ -117,6 +120,62 @@ updateGoomba dt gs gId g@Goomba { goombaPos = pos
            , goombaOnGround   = groundContact flags
            , goombaCollisions = events
            }
+  where
+    gravityAccel  = (0, gravityAcceleration)
+    dirSign       = case dir of { Types.Left -> -1.0; Types.Right -> 1.0 }
+    goombaAccel   = (dirSign * goombaMoveAccel, 0)
+    airDrag       = (- (airFrictionCoeff * fst vel), 0)
+    totalAccel    = gravityAccel `addVec` goombaAccel `addVec` airDrag
+    clampGoombaVelocity (vx, vy) =
+      let vx' = max (-goombaWalkSpeed) (min goombaWalkSpeed vx)
+      in (vx', vy)
+    flipDir Types.Left  = Types.Right
+    flipDir Types.Right = Types.Left
+
+updatePowerup :: Float -> GameState -> Int -> Powerup -> Powerup
+updatePowerup dt gs puId pu@Powerup 
+  { powerupPos = pos
+  , powerupVel = vel
+  , powerupColSpec = colSpec
+  , powerupDir = dir
+  } =
+  case colSpec of
+    Nothing ->
+      let velAfterAccel = addVec vel (scaleVec totalAccel dt)
+          velLimited    = clampGoombaVelocity velAfterAccel
+          newPos        = addVecToPoint pos (scaleVec velLimited dt)
+      in pu { powerupPos = newPos
+            , powerupVel = velLimited
+            }
+    Just spec ->
+      let velAfterAccel   = addVec vel (scaleVec totalAccel dt)
+          displacement    = scaleVec velAfterAccel dt
+          blockers        = colliders (world gs) ++ maybeToList (playerCollider (player gs))
+          collider        = specToCollider pos (CTEntity puId) spec
+          (resolvedPos, flags, events) = resolveMovement collider pos displacement blockers
+          velAfterCollision    = applyCollisionFlags flags velAfterAccel
+          contactDrag          = contactFrictionAccel (contactNormals flags) velAfterCollision
+          velWithFriction      = addVec velAfterCollision (scaleVec contactDrag dt)
+          velLimited           = clampGoombaVelocity velWithFriction
+          wallAhead            =
+            hitX flags &&
+            let probeOffset   = (dirSign * wallProbeDistance, 0)
+                probeCollider = specToCollider (addVecToPoint resolvedPos probeOffset) None spec
+            in any (collides probeCollider) blockers
+          hitWall              = wallAhead
+          newDirBase           = if hitWall then flipDir dir else dir
+          newDir               =
+            if hitWall
+              then newDirBase
+              --then trace ("[DEBUG] Powerup (id: " ++ show puId ++ ") wall collision at " ++ show resolvedPos ++ "\n") newDirBase
+              else newDirBase
+          adjVx                = if hitWall then 0 else fst velLimited
+          velFinal             = (adjVx, snd velLimited)
+      in pu { powerupPos        = resolvedPos
+            , powerupVel        = velFinal
+            , powerupDir        = newDir
+            , powerupCollisions = events
+            }
   where
     gravityAccel  = (0, gravityAcceleration)
     dirSign       = case dir of { Types.Left -> -1.0; Types.Right -> 1.0 }

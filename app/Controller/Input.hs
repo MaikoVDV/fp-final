@@ -1,31 +1,15 @@
 module Controller.Input where
 
 import Graphics.Gloss.Interface.IO.Game
-import Control.Monad (when)
 import System.Exit (exitSuccess)
 import System.Directory (createDirectoryIfMissing)
+import Control.Monad (when)
 
 import Model.Types
-import Model.InitialState (buildInitialGameState)
-import qualified LevelCodec
+import LevelCodec
 import MathUtils
-
-jumpImpulse :: Float
-jumpImpulse = 8
-
-jumpHoldAccelStart :: Float
-jumpHoldAccelStart = 44
-
-jumpHoldDuration :: Float
-jumpHoldDuration = 0.5
-
--- Zoom bounds for tile scaling
-minTileZoom, maxTileZoom :: Float
-minTileZoom = 0.5
-maxTileZoom = 2.0
-
-zoomStep :: Float
-zoomStep = 0.1
+import Model.InitialState
+import Model.Config
 
 input :: Event -> AppState -> IO AppState
 input (EventKey (SpecialKey KeyEsc) Down _ _) appState = exitSuccess >> return appState
@@ -33,13 +17,13 @@ input (EventKey (SpecialKey KeyEsc) Down _ _) appState = exitSuccess >> return a
 input (EventKey (Char 's') Down _ _) (Playing gs) = do
   putStrLn "[DEBUG] s pressed - saving level"
   createDirectoryIfMissing True "levels"
-  LevelCodec.saveLevel "levels/quicksave.lvl" gs
+  saveLevel "levels/quicksave.lvl" gs
   putStrLn "Saved level to levels/quicksave.lvl"
   return (Playing gs)
 input (EventKey (Char 'S') Down _ _) (Playing gs) = do
   putStrLn "[DEBUG] S pressed - saving level"
   createDirectoryIfMissing True "levels"
-  LevelCodec.saveLevel "levels/quicksave.lvl" gs
+  saveLevel "levels/quicksave.lvl" gs
   putStrLn "Saved level to levels/quicksave.lvl"
   return (Playing gs)
 input e appState =
@@ -53,21 +37,18 @@ handleMenuInput _ menuState = return (Menu menuState)
 
 startGame :: MenuState -> IO AppState
 startGame menuState = do
-  let gameState =
-        buildInitialGameState
-          (menuDebugMode menuState)
-          (menuTileMap menuState)
-          (menuPlayerSprite menuState)
-          (menuScreenSize menuState)
+  initialState <- buildInitialGameState
+    (menuDebugMode menuState)
+    (menuScreenSize menuState)
   when (menuDebugMode menuState) $
-    print (colliders (world gameState))
-  return (Playing gameState)
+    print (colliders (world initialState))
+  return (Playing initialState)
 
 handlePlayingInput :: Event -> GameState -> GameState
-handlePlayingInput (EventKey (SpecialKey KeyLeft)  Down _ _) gs = gs { moveLeftHeld = True }
-handlePlayingInput (EventKey (SpecialKey KeyRight) Down _ _) gs = gs { moveRightHeld = True }
-handlePlayingInput (EventKey (SpecialKey KeyLeft)  Up   _ _) gs = gs { moveLeftHeld = False }
-handlePlayingInput (EventKey (SpecialKey KeyRight) Up   _ _) gs = gs { moveRightHeld = False }
+handlePlayingInput (EventKey (SpecialKey KeyLeft)  Down _ _) gs = gs { player = (player gs) { moveLeftHeld  = True } }
+handlePlayingInput (EventKey (SpecialKey KeyRight) Down _ _) gs = gs { player = (player gs) { moveRightHeld = True } }
+handlePlayingInput (EventKey (SpecialKey KeyLeft)  Up   _ _) gs = gs { player = (player gs) { moveLeftHeld  = False } }
+handlePlayingInput (EventKey (SpecialKey KeyRight) Up   _ _) gs = gs { player = (player gs) { moveRightHeld = False } }
 -- Zoom controls
 handlePlayingInput (EventKey (Char '+') Down _ _) gs = adjustTileZoom zoomStep gs
 handlePlayingInput (EventKey (Char '=') Down _ _) gs = adjustTileZoom zoomStep gs
@@ -122,12 +103,3 @@ adjustTileZoom delta gs =
   let cur = tileZoom gs
       newVal = clampTileZoom (cur + delta)
   in gs { tileZoom = newVal }
-
-clampTileZoom :: Float -> Float
-clampTileZoom n = max minTileZoom (min maxTileZoom n)
-
-clamp01 :: Float -> Float
-clamp01 x
-  | x < 0     = 0
-  | x > 1     = 1
-  | otherwise = x

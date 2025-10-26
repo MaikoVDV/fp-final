@@ -1,13 +1,9 @@
 module Controller.Collision where
 
 import Model.Types
-import Model.Collider
-
-setTile :: World -> (Int, Int) -> Tile -> World
-setTile w@World {grid} (x, y) newTile = 
-  let grid' = [if rIdx == y then setRow r else r | (r, rIdx) <- zip grid [0..]]
-      setRow r = [if tIdx == x then newTile else t | (t, tIdx) <- zip r [0..]]
-  in w { grid = grid', colliders = generateCollidersForWorld grid' }
+import Model.World
+import Model.Entity
+import Debug.Trace
 
 
 handleCollisionEvents :: GameState -> GameState
@@ -22,26 +18,38 @@ handlePlayerCollisions gameState@GameState { player } =
   where
     handleEvent gs@GameState {player = p, entities = es, world = w} CollisionEvent { colEventTag, colEventAxis, colEventNormal }=
       case colEventTag of
-        CTEntity (EGoomba gId _) -> 
-          if colEventAxis == AxisY && snd colEventNormal > 0 -- check if player jumped on top of goomba
-            then 
-              -- Player touched goomba from top, kill goomba
-              let es' = filter (\e -> case e of
-                    (EGoomba xId _) -> xId /= gId
-                    _ -> True
-                    ) es
-              in gs {player = p, entities = es'}
-            else
-              -- Player touched goomba from side/bottom, take damage
-              gs {player = p {playerPos = (0, 0)}, entities = es}
-        CTEntity (EKoopa _ _) -> gs
-        CTWorld  coords       ->
+        CTEntity eId ->
+          case getEntity gs eId of
+          --case trace ("Collided with entity (id: " ++ show eId ++ ")") getEntity gs eId of
+            Nothing -> gs
+            Just entity -> case entity of
+              (EGoomba _ _) ->
+                if colEventAxis == AxisY && snd colEventNormal > 0 -- check if player jumped on top of goomba
+                  then
+                    -- Player touched goomba from top, kill goomba
+                    killEntity gs eId
+                  else
+                    -- Player touched goomba from side/bottom, take damage
+                    gs {player = p {playerPos = (0, 0)}, entities = es}
+              (EPowerup _ _) -> trace "Collected a powerup!" killEntity gs eId
+              _            -> gs
+        CTWorld  coords@(tX, tY)       ->
           -- trace ("Tile at (" ++ show x ++ ", " ++ show y ++ ")")
           if colEventAxis == AxisY && snd colEventNormal < 0 -- check if collision was on bottom side of tile
-            then 
-              -- Find tile hit, and destroy
-              let w' = setTile w coords Air
-              in gs { world = w' }
+            then
+              let
+                hitTile = getTile w coords
+                -- Find tile hit, and destroy if breakable
+              in if isTileBreakable hitTile
+                  then gs { world = setTile w coords Air }
+                  -- Handle special behavior of some tiles
+                  else case hitTile of
+                    QuestionBlockFull ->
+                      let w' = setTile w coords QuestionBlockEmpty
+                      --let w' = setTile w coords $ trace ("Pos: " ++ show coords) QuestionBlockEmpty
+                          gsAfterSpawn = spawnEntity gs (EPowerup 0 defaultPowerup { powerupPos = (fromIntegral tX + 0.5, fromIntegral (-tY) + 0.5) } )
+                      in gsAfterSpawn { world = w' }
+                    _             -> gs
             else
               gs
         _ -> gs

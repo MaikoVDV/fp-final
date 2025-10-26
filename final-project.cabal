@@ -20,6 +20,8 @@ executable final-project
     other-modules:
       Model.Types
       Model.Config
+      Model.World
+      Model.Entity
       Model.Collider
       Model.InitialState
       View
@@ -42,3 +44,4 @@ executable final-project
     default-extensions:
       NamedFieldPuns
       RecordWildCards
+      LambdaCase

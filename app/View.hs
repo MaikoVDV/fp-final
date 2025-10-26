@@ -5,14 +5,10 @@ import qualified Data.Map as Map
 import Data.Maybe (mapMaybe, maybeToList)
 
 import Model.Types
+import qualified Model.Types as Types
 import Model.Collider
 import Model.InitialState
-
-assetTilePixelSize :: Float
-assetTilePixelSize = 18
-
-scaleFactor :: Float
-scaleFactor = 0.5
+import Model.Config
 
 tilePixelsForState :: GameState -> Float
 tilePixelsForState GameState { tileZoom, screenSize } =
@@ -34,10 +30,10 @@ viewPure (Menu menuState) = renderMenu menuState
 viewPure (Playing gs) = viewGame gs
 
 viewGame :: GameState -> Picture
-viewGame gs =
+viewGame gs@GameState { player, screenSize, frameCount } =
   let tilePixels = tilePixelsForState gs
-      (px, py) = playerPos (player gs)
-      (_, screenHeightInt) = screenSize gs
+      (px, py) = playerPos player
+      (_, screenHeightInt) = screenSize
       screenHeight = fromIntegral screenHeightInt
       desiredPlayerScreenFraction = 1 / 3 :: Float
       targetPlayerY = (-0.5 + desiredPlayerScreenFraction) * screenHeight
@@ -45,9 +41,9 @@ viewGame gs =
       camY = targetPlayerY - (py * tilePixels)
   in translate camX camY $
        Pictures
-         [ renderWorld tilePixels gs
-         , renderEntities tilePixels gs
-         , renderPlayer tilePixels (player gs)
+         [ renderEntities tilePixels gs
+         , renderPlayer tilePixels player frameCount
+         , renderWorld tilePixels gs
          ]
 
 renderMenu :: MenuState -> Picture
@@ -73,53 +69,55 @@ renderMenu MenuState { menuDebugMode } =
 
 renderWorld :: Float -> GameState -> Picture
 renderWorld tilePixels GameState { world, tileMap, player, entities, debugMode } =
-  let tilesPic = Pictures
-        [ translate (xWorld * tilePixels) (yWorld * tilePixels) (withTileScale tilePixels (getTileSprite tileMap tile))
-        | (y, row)  <- zip ([0..] :: [Int]) $ grid world
-        , (x, tile) <- zip ([0..] :: [Int]) row
-        , let xWorld = fromIntegral x + 0.5
-        , let yWorld = negate (fromIntegral y) - 0.5
-        ]
-      colliderPics
-        | debugMode =
-            let worldCollidersPics = map (renderAABB tilePixels) (colliders world)
-                playerColliderPic  = map (renderAABB tilePixels) (maybeToList (playerCollider player))
-                entityColliderPics = map (renderAABB tilePixels) (mapMaybe entityCollider entities)
-            in [Pictures (worldCollidersPics ++ playerColliderPic ++ entityColliderPics)]
-        | otherwise = []
+  let 
+    getTileSprite :: TileMap -> Tile -> Picture
+    getTileSprite m t = Map.findWithDefault blank t m
+    tilesPic = Pictures
+      [ translate (xWorld * tilePixels) (yWorld * tilePixels) (withTileScale tilePixels (getTileSprite tileMap tile))
+      | (y, row)  <- zip ([0..] :: [Int]) $ grid world
+      , (x, tile) <- zip ([0..] :: [Int]) row
+      , let xWorld = fromIntegral x + 0.5
+      , let yWorld = negate (fromIntegral y) - 0.5
+      ]
+    colliderPics
+      | debugMode =
+          let worldCollidersPics = map (renderAABB tilePixels) (colliders world)
+              playerColliderPic  = map (renderAABB tilePixels) (maybeToList (playerCollider player))
+              entityColliderPics = map (renderAABB tilePixels) (mapMaybe entityCollider entities)
+          in [Pictures (worldCollidersPics ++ playerColliderPic ++ entityColliderPics)]
+      | otherwise = []
   in Pictures (tilesPic : colliderPics)
 
 renderEntities :: Float -> GameState -> Picture
-renderEntities tilePixels GameState { entities } = Pictures $ map (renderEntity tilePixels) entities
+renderEntities tilePixels GameState { entities, animMap, frameCount } = Pictures $ map (renderEntity tilePixels animMap frameCount) entities
 
-renderEntity :: Float -> Entity -> Picture
-renderEntity tilePixels (EGoomba _ g)       = renderGoomba tilePixels g
-renderEntity _          (EKoopa _ k)        = renderKoopa  k
-renderEntity _          (EPowerup _)        = blank
-renderEntity _          (EMovingPlatform _) = blank
+renderEntity :: Float -> AnimMap -> Int -> Entity -> Picture
+renderEntity tPx m fCtx (EGoomba   _ Goomba { goombaPos, goombaDir })   = renderEntity' tPx (getEntityAnim m TGoomba)  fCtx goombaPos  goombaDir
+renderEntity tPx m fCtx (EKoopa    _ Koopa { koopaPos, koopaDir })      = renderEntity' tPx (getEntityAnim m TKoopa)   fCtx koopaPos   koopaDir
+renderEntity tPx m fCtx (EPowerup  _ Powerup{ powerupPos, powerupDir }) = renderEntity' tPx (getEntityAnim m TPowerup) fCtx powerupPos powerupDir
+renderEntity _   _ _    (EPlatform _)                                   = blank
 
-getTileSprite :: TileMap -> Tile -> Picture
-getTileSprite m t = Map.findWithDefault blank t m
+renderEntity' :: Float -> Animation -> Int -> Point -> MoveDir -> Picture
+renderEntity' tPx anim fCtx (x, y) dir = 
+  let  
+    spriteIdx = (fCtx `div` frameTime) `mod` length anim
+    sprite = anim !! spriteIdx -- dit klopt nog niet helemaal met animaties enz
+    spriteScaled = withTileScale tPx sprite
+    spriteFlipped = scale (dirToPictureScaleX dir) 1 spriteScaled
+  in translate (x * tPx) (y * tPx) spriteFlipped 
 
--- Deze kunnen we misschien allemaal in een RenderEntity functie stoppen
--- door bijv. alle entities een Renderable typeclass te geven waarin
--- een functie staat zoals getSprite of getAnimation of zoiets
-renderPlayer :: Float -> Player -> Picture
-renderPlayer tilePixels Player { playerPos = (x, y), playerSprite } = 
-  let sprite = head playerSprite
-      spriteScaled = withTileScale tilePixels sprite
-  in translate (x * tilePixels) (y * tilePixels) spriteScaled -- dit klopt nog niet helemaal met animaties enz
+getEntityAnim :: AnimMap -> EntityType -> Animation
+getEntityAnim m t = Map.findWithDefault [blank] t m
 
-renderGoomba :: Float -> Goomba -> Picture
-renderGoomba tilePixels Goomba { goombaPos = (x, y) } =
-  let w = 0.9 * tilePixels
-      h = 0.9 * tilePixels
-  in translate (x * tilePixels) (y * tilePixels) $
-       color red $
-         rectangleSolid w h
-
-renderKoopa :: Koopa -> Picture
-renderKoopa = undefined
+renderPlayer :: Float -> Player -> Int -> Picture
+renderPlayer tilePixels Player { playerPos = (x, y), playerAnim = anim, lastMoveDir } fCtx = 
+  let 
+    moveDir = if lastMoveDir == -1 then 1 else -1
+    spriteIdx = (fCtx `div` frameTime) `mod` length anim
+    sprite = anim !! spriteIdx -- dit klopt nog niet helemaal met animaties enz
+    spriteScaled = withTileScale tilePixels sprite
+    spriteFlipped = scale moveDir 1 spriteScaled
+  in translate (x * tilePixels) (y * tilePixels) spriteFlipped -- dit klopt nog niet helemaal met animaties enz
 
 renderAABB :: Float -> Collider -> Picture
 renderAABB tileSize (AABB (x, y) w h _) =
@@ -136,3 +134,7 @@ renderAABB tileSize (AABB (x, y) w h _) =
   in translate xPixels yPixels $
        color green $
          lineLoop corners
+
+dirToPictureScaleX :: MoveDir -> Float
+dirToPictureScaleX Types.Left  = 1
+dirToPictureScaleX Types.Right = -1

@@ -1,6 +1,7 @@
 module MathUtils where
 
 import Graphics.Gloss
+import Model.Config
 
 tangentFromNormal :: Vector -> Vector
 tangentFromNormal (nx, ny) = normalizeVec (-ny, nx)
@@ -29,3 +30,15 @@ subPoints (x1, y1) (x0, y0) = (x1 - x0, y1 - y0)
 
 negateVec :: Vector -> Vector
 negateVec (x, y) = (-x, -y)
+
+upVector :: Vector
+upVector = (0, 1)
+
+clampTileZoom :: Float -> Float
+clampTileZoom n = max minTileZoom (min maxTileZoom n)
+
+clamp01 :: Float -> Float
+clamp01 x
+  | x < 0     = 0
+  | x > 1     = 1
+  | otherwise = x
