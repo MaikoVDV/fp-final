@@ -2,11 +2,11 @@ module Controller.Input where
 
 import Graphics.Gloss.Interface.IO.Game
 import System.Exit (exitSuccess)
-import System.Directory (createDirectoryIfMissing)
+-- import System.Directory (createDirectoryIfMissing)
 import Control.Monad (when)
 
 import Model.Types
-import LevelCodec
+-- import LevelCodec
 import MathUtils
 import Model.InitialState
 import Model.Config
@@ -14,18 +14,6 @@ import Model.Config
 input :: Event -> AppState -> IO AppState
 input (EventKey (SpecialKey KeyEsc) Down _ _) appState = exitSuccess >> return appState
 -- Ctrl+S quick-save current level to levels/quicksave.lvl
-input (EventKey (Char 's') Down _ _) (Playing gs) = do
-  putStrLn "[DEBUG] s pressed - saving level"
-  createDirectoryIfMissing True "levels"
-  saveLevel "levels/quicksave.lvl" gs
-  putStrLn "Saved level to levels/quicksave.lvl"
-  return (Playing gs)
-input (EventKey (Char 'S') Down _ _) (Playing gs) = do
-  putStrLn "[DEBUG] S pressed - saving level"
-  createDirectoryIfMissing True "levels"
-  saveLevel "levels/quicksave.lvl" gs
-  putStrLn "Saved level to levels/quicksave.lvl"
-  return (Playing gs)
 input e appState =
   case appState of
     Menu menuState  -> handleMenuInput e menuState
@@ -43,21 +31,36 @@ startGame menuState = do
   return (Playing initialState)
 
 handlePlayingInput :: Event -> GameState -> GameState
+-- Movement: arrows and WASD
 handlePlayingInput (EventKey (SpecialKey KeyLeft)  Down _ _) gs = gs { player = (player gs) { moveLeftHeld  = True } }
 handlePlayingInput (EventKey (SpecialKey KeyRight) Down _ _) gs = gs { player = (player gs) { moveRightHeld = True } }
 handlePlayingInput (EventKey (SpecialKey KeyLeft)  Up   _ _) gs = gs { player = (player gs) { moveLeftHeld  = False } }
 handlePlayingInput (EventKey (SpecialKey KeyRight) Up   _ _) gs = gs { player = (player gs) { moveRightHeld = False } }
+handlePlayingInput (EventKey (Char 'a') Down _ _) gs = gs { player = (player gs) { moveLeftHeld  = True } }
+handlePlayingInput (EventKey (Char 'A') Down _ _) gs = gs { player = (player gs) { moveLeftHeld  = True } }
+handlePlayingInput (EventKey (Char 'a') Up   _ _) gs = gs { player = (player gs) { moveLeftHeld  = False } }
+handlePlayingInput (EventKey (Char 'A') Up   _ _) gs = gs { player = (player gs) { moveLeftHeld  = False } }
+handlePlayingInput (EventKey (Char 'd') Down _ _) gs = gs { player = (player gs) { moveRightHeld = True } }
+handlePlayingInput (EventKey (Char 'D') Down _ _) gs = gs { player = (player gs) { moveRightHeld = True } }
+handlePlayingInput (EventKey (Char 'd') Up   _ _) gs = gs { player = (player gs) { moveRightHeld = False } }
+handlePlayingInput (EventKey (Char 'D') Up   _ _) gs = gs { player = (player gs) { moveRightHeld = False } }
 -- Zoom controls
 handlePlayingInput (EventKey (Char '+') Down _ _) gs = adjustTileZoom zoomStep gs
 handlePlayingInput (EventKey (Char '=') Down _ _) gs = adjustTileZoom zoomStep gs
 handlePlayingInput (EventKey (Char '-') Down _ _) gs = adjustTileZoom (-zoomStep) gs
 handlePlayingInput (EventKey (Char '_') Down _ _) gs = adjustTileZoom (-zoomStep) gs
-handlePlayingInput (EventKey (SpecialKey KeyUp)    Down _ _) gs =
-  gs { pendingJump = True, jumpHeld = True }
-handlePlayingInput (EventKey (SpecialKey KeyUp)    Up   _ _) gs =
-  gs { jumpHeld = False }
-handlePlayingInput (EventKey (SpecialKey KeyCtrlR) Down _ _) gs = gs { sprintHeld = True }
-handlePlayingInput (EventKey (SpecialKey KeyCtrlR) Up   _ _) gs = gs { sprintHeld = False }
+-- Jump: Up arrow and W
+handlePlayingInput (EventKey (SpecialKey KeyUp)    Down _ _) gs = gs { pendingJump = True, jumpHeld = True }
+handlePlayingInput (EventKey (SpecialKey KeyUp)    Up   _ _) gs = gs { jumpHeld = False }
+handlePlayingInput (EventKey (Char 'w')            Down _ _) gs = gs { pendingJump = True, jumpHeld = True }
+handlePlayingInput (EventKey (Char 'W')            Down _ _) gs = gs { pendingJump = True, jumpHeld = True }
+handlePlayingInput (EventKey (Char 'w')            Up   _ _) gs = gs { jumpHeld = False }
+handlePlayingInput (EventKey (Char 'W')            Up   _ _) gs = gs { jumpHeld = False }
+handlePlayingInput (EventKey (SpecialKey KeySpace) Down _ _) gs = gs { pendingJump = True, jumpHeld = True }
+handlePlayingInput (EventKey (SpecialKey KeySpace) Up   _ _) gs = gs { jumpHeld = False }
+-- Sprint: Left Shift (avoid Ctrl + Char issues on Windows/GLUT)
+handlePlayingInput (EventKey (SpecialKey KeyShiftL) Down _ _) gs = gs { sprintHeld = True }
+handlePlayingInput (EventKey (SpecialKey KeyShiftL) Up   _ _) gs = gs { sprintHeld = False }
 handlePlayingInput _ gs = gs
 
 

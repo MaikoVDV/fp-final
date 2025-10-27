@@ -10,10 +10,10 @@ jumpImpulse :: Float
 jumpImpulse = 8
 
 jumpHoldAccelStart :: Float
-jumpHoldAccelStart = 44
+jumpHoldAccelStart = 50
 
 jumpHoldDuration :: Float
-jumpHoldDuration = 0.5
+jumpHoldDuration = 0.56
 
 -- For how many game frames a given sprite in an animation should last
 -- a lower frametime means animations run quicker
@@ -36,8 +36,8 @@ groundFrictionCoeff = 12
 airFrictionCoeff = 1.5
 
 groundWalkAccel, groundSprintAccel, groundMoveDecel, airWalkAccel, airSprintAccel, airMoveDecel :: Float
-groundWalkAccel = 40
-groundSprintAccel = 80
+groundWalkAccel = 50
+groundSprintAccel = 100
 groundMoveDecel = 125
 airWalkAccel = 10
 airSprintAccel = 17

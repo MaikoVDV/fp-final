@@ -119,25 +119,27 @@ updateGoomba dt gs gId g@Goomba
     Just spec ->
       let velAfterAccel   = addVec vel (scaleVec totalAccel dt)
           displacement    = scaleVec velAfterAccel dt
-          blockers        = colliders (world gs) ++ maybeToList (playerCollider (player gs))
+          enemyBlockers    = otherEnemyColliders gId (entities gs)
+          blockers        = colliders (world gs)
+                             ++ maybeToList (playerCollider (player gs))
+                             ++ enemyBlockers
           collider        = specToCollider pos (CTEntity gId) spec
-          (resolvedPos, flags, events) = resolveMovement collider pos displacement blockers
+          (resolvedPos0, flags, events) = resolveMovement collider pos displacement blockers
+          -- If this goomba touched another enemy, revert to original position to avoid overlap
+          touchedEnemy     = any (collidedWithOtherEnemy gId (entities gs)) events
+          resolvedPos      = if touchedEnemy then pos else resolvedPos0
           velAfterCollision    = applyCollisionFlags flags velAfterAccel
           contactDrag          = contactFrictionAccel (contactNormals flags) velAfterCollision
           velWithFriction      = addVec velAfterCollision (scaleVec contactDrag dt)
           velLimited           = clampGoombaVelocity velWithFriction
-          wallAhead            =
+          wallAheadProbe       =
             hitX flags &&
             let probeOffset   = (dirSign * wallProbeDistance, 0)
                 probeCollider = specToCollider (addVecToPoint resolvedPos probeOffset) None spec
             in any (collides probeCollider) blockers
-          hitWall              = wallAhead
+          hitWall              = wallAheadProbe || touchedEnemy
           newDirBase           = if hitWall then flipDir dir else dir
-          newDir               =
-            if hitWall
-              --then trace ("[DEBUG] Goomba (id: " ++ show gId ++ ") wall collision at " ++ show resolvedPos ++ "\n") newDirBase
-              then  newDirBase
-              else newDirBase
+          newDir               = newDirBase
           adjVx                = if hitWall then 0 else fst velLimited
           velFinal             = (adjVx, snd velLimited)
       in g { goombaPos        = resolvedPos
@@ -157,6 +159,26 @@ updateGoomba dt gs gId g@Goomba
       in (vx', vy)
     flipDir Types.Left  = Types.Right
     flipDir Types.Right = Types.Left
+
+    -- Colliders for other enemies (prevent inter-enemy overlap)
+    otherEnemyColliders :: Int -> [Entity] -> [Collider]
+    otherEnemyColliders selfId es =
+      let isOtherEnemy e = case e of
+            EGoomba  eid _ -> eid /= selfId
+            EKoopa   eid _ -> eid /= selfId
+            _              -> False
+          toCol e = entityCollider e
+      in mapMaybe toCol (filter isOtherEnemy es)
+
+    -- Detect if a collision event was with another enemy (goomba/koopa)
+    collidedWithOtherEnemy :: Int -> [Entity] -> CollisionEvent -> Bool
+    collidedWithOtherEnemy selfId es CollisionEvent { colEventTag } = case colEventTag of
+      CTEntity eid ->
+        eid /= selfId && any (\e -> case e of
+          EGoomba  id' _ -> id' == eid
+          EKoopa   id' _ -> id' == eid
+          _              -> False) es
+      _ -> False
 updatePowerup :: Float -> GameState -> Int -> Powerup -> Powerup
 updatePowerup dt gs puId pu@Powerup
   { powerupPos = pos

@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Phoityne: Debug final-project (cabal)",
+      "type": "ghc",
+      "request": "launch",
+      "workspace": "${workspaceFolder}",
+      "startup": "${workspaceFolder}/app/Main.hs",
+      "startupFunc": "Main.main",
+      "startupArgs": [],
+      "stopOnEntry": false,
+      "mainArgs": [],
+      "ghciPrompt": "H>>= ",
+      "ghciInitialPrompt": "Prelude>",
+      "ghciCmd": "cabal v2-repl exe:final-project",
+      "workDir": "${workspaceFolder}",
+      "env": {},
+      "logFile": "${workspaceFolder}/.vscode/phoityne.log",
+      "logLevel": "INFO"
+    }
+  ]
+}

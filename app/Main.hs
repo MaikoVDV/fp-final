@@ -26,8 +26,7 @@ main = do
       initialState = Menu menuState
 
   playIO
-    --FullScreen
-    (InWindow "Maiko & Sam's platformer" (1000, 800) (100, 100))
+    FullScreen
     (makeColorI 135 206 235 255)
     60
     initialState
