@@ -37,9 +37,7 @@ handleMenuInput _ menuState = return (Menu menuState)
 
 startGame :: MenuState -> IO AppState
 startGame menuState = do
-  initialState <- buildInitialGameState
-    (menuDebugMode menuState)
-    (menuScreenSize menuState)
+  initialState <- buildInitialGameState menuState
   when (menuDebugMode menuState) $
     print (colliders (world initialState))
   return (Playing initialState)

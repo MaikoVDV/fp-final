@@ -16,21 +16,42 @@ import MathUtils
 
 update :: Float -> AppState -> IO AppState
 update _  menuState@(Menu _) = return menuState
-update dt (Playing gs)       = return . Playing $ updateGame dt gs
+update dt (Playing gs)       =
+  let gs' = updateGame dt gs
+  in case nextState gs' of
+    NPlaying -> return . Playing $ gs'
+    _       -> return (Menu $ menuState gs')
+
+-- updateGame :: Float -> GameState -> GameState
+-- updateGame dt gs =
+--   let 
+--     updatedPlayer   = updatePlayer dt gs
+--     updatedEntities = map (updateEntity dt gs) (entities gs)
+--     updatedState = gs
+--       { player = updatedPlayer
+--       , entities = updatedEntities
+--       , pendingJump = False
+--       }
+--     finalState = handleCollisionEvents updatedState
+--   in finalState { frameCount = frameCount gs + 1 }
 
 updateGame :: Float -> GameState -> GameState
-updateGame dt gs =
-  let updatedPlayer   = updatePlayer dt gs
-      updatedEntities = map (updateEntity dt gs) (entities gs)
-      updatedState = gs 
-        { player = updatedPlayer
-        , entities = updatedEntities
-        , pendingJump = False
-        }
-      finalState = handleCollisionEvents updatedState
-  in finalState { frameCount = frameCount gs + 1 }
+updateGame dt =
+  handleCollisionEvents
+  . updateEntities dt
+  . clearJump
+  . updatePlayer dt
+  . incrementFrame
+  where 
+    incrementFrame :: GameState -> GameState
+    incrementFrame gs@GameState { frameCount }
+      = gs {frameCount = frameCount + 1, nextState = NPlaying}
 
-updatePlayer :: Float -> GameState -> Player
+    clearJump ::GameState -> GameState
+    clearJump gs = gs { pendingJump = False }
+
+
+updatePlayer :: Float -> GameState -> GameState
 updatePlayer dt gs =
   let p = player gs
       blockers = colliders (world gs) ++ mapMaybe entityCollider (entities gs)
@@ -58,16 +79,21 @@ updatePlayer dt gs =
                   _ | onGround -> upVector
                     | Just normal <- playerSlide -> addVec normal upVector
                     | otherwise -> playerJumpDir
-          in playerAfterHold
-               { playerVel      = addVec (playerVel playerAfterHold) impulse
-               , onGround       = False
-               , playerJumpTime = 0
-               , playerJumpDir  = launchDir
-               , playerSlide    = Nothing
-               }
-        else playerAfterHold
+          in 
+            gs { player = 
+              playerAfterHold
+              { playerVel      = addVec (playerVel playerAfterHold) impulse
+              , onGround       = False
+              , playerJumpTime = 0
+              , playerJumpDir  = launchDir
+              , playerSlide    = Nothing
+              }
+            }
+        else gs { player = playerAfterHold }
 
 
+updateEntities :: Float -> GameState -> GameState
+updateEntities dt gs = gs { entities = map (updateEntity dt gs) (entities gs) }
 -- Handle updating different types of entities separately
 updateEntity :: Float -> GameState -> Entity -> Entity
 updateEntity dt gs (EGoomba  gId  g)  = EGoomba  gId  (updateGoomba  dt gs gId  g)
@@ -76,7 +102,7 @@ updateEntity dt gs (EPowerup puId pu) = EPowerup puId (updatePowerup dt gs puId 
 updateEntity _  _  e             = e
 
 updateGoomba :: Float -> GameState -> Int -> Goomba -> Goomba
-updateGoomba dt gs gId g@Goomba 
+updateGoomba dt gs gId g@Goomba
   { goombaPos = pos
   , goombaVel = vel
   , goombaColSpec = colSpec
@@ -131,9 +157,8 @@ updateGoomba dt gs gId g@Goomba
       in (vx', vy)
     flipDir Types.Left  = Types.Right
     flipDir Types.Right = Types.Left
-
 updatePowerup :: Float -> GameState -> Int -> Powerup -> Powerup
-updatePowerup dt gs puId pu@Powerup 
+updatePowerup dt gs puId pu@Powerup
   { powerupPos = pos
   , powerupVel = vel
   , powerupColSpec = colSpec

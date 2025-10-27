@@ -3,6 +3,7 @@ module View where
 import Graphics.Gloss
 import qualified Data.Map as Map
 import Data.Maybe (mapMaybe, maybeToList)
+import Data.Ord
 
 import Model.Types
 import qualified Model.Types as Types
@@ -41,9 +42,9 @@ viewGame gs@GameState { player, screenSize, frameCount } =
       camY = targetPlayerY - (py * tilePixels)
   in translate camX camY $
        Pictures
-         [ renderEntities tilePixels gs
+         [ renderWorld tilePixels gs 
+         , renderEntities tilePixels gs
          , renderPlayer tilePixels player frameCount
-         , renderWorld tilePixels gs
          ]
 
 renderMenu :: MenuState -> Picture
@@ -110,9 +111,10 @@ getEntityAnim :: AnimMap -> EntityType -> Animation
 getEntityAnim m t = Map.findWithDefault [blank] t m
 
 renderPlayer :: Float -> Player -> Int -> Picture
-renderPlayer tilePixels Player { playerPos = (x, y), playerAnim = anim, lastMoveDir } fCtx = 
+renderPlayer tilePixels Player { playerPos = (x, y), health, playerAnim = anims, lastMoveDir } fCtx = 
   let 
     moveDir = if lastMoveDir == -1 then 1 else -1
+    anim = anims !! clamp (0, length anims - 1) (health - 1)
     spriteIdx = (fCtx `div` frameTime) `mod` length anim
     sprite = anim !! spriteIdx -- dit klopt nog niet helemaal met animaties enz
     spriteScaled = withTileScale tilePixels sprite

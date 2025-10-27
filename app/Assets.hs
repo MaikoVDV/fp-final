@@ -9,18 +9,21 @@ import Graphics.Gloss
 
 loadTileMap :: IO TileMap
 loadTileMap = do
-  grassPic         <- loadBMP "assets/tiles/grass.bmp"
-  cratePic         <- loadBMP "assets/tiles/crate.bmp"
-  metalBoxPic      <- loadBMP "assets/tiles/metal_box.bmp"
-  questionBlockFullPic <- loadBMP "assets/tiles/question_block_full.bmp"
+  grassPic              <- loadBMP "assets/tiles/grass.bmp"
+  cratePic              <- loadBMP "assets/tiles/crate.bmp"
+  metalBoxPic           <- loadBMP "assets/tiles/metal_box.bmp"
+  questionBlockFullPic  <- loadBMP "assets/tiles/question_block_full.bmp"
   questionBlockEmptyPic <- loadBMP "assets/tiles/question_block_empty.bmp"
+  flagPic               <- loadBMP "assets/tiles/flag_0.bmp"
+  spikesPic             <- loadBMP "assets/tiles/spikes.bmp"
   return $ Map.fromList
-    [
-      (Grass,         grassPic),
-      (Crate,         cratePic),
-      (MetalBox,      metalBoxPic),
-      (QuestionBlockFull, questionBlockFullPic),
-      (QuestionBlockEmpty, questionBlockEmptyPic)
+    [ (Grass,              grassPic)
+    , (Crate,              cratePic)
+    , (MetalBox,           metalBoxPic)
+    , (QuestionBlockFull,  questionBlockFullPic)
+    , (QuestionBlockEmpty, questionBlockEmptyPic)
+    , (Flag,               flagPic)
+    , (Spikes,             spikesPic)
     ]
 
 loadAnimMap :: IO AnimMap
@@ -33,10 +36,20 @@ loadAnimMap = do
     , (TPowerup, powerupAnim)
     ]
 
-loadPlayerAnimation :: IO Animation
+loadPlayerAnimation :: IO [Animation]
 loadPlayerAnimation = sequence 
-  [ loadBMP "assets/entities/player_0.bmp"
-  , loadBMP "assets/entities/player_1.bmp"
+  [ sequence 
+    [ loadBMP "assets/entities/player_1hp_0.bmp"
+    , loadBMP "assets/entities/player_1hp_1.bmp"
+    ]
+  , sequence 
+    [ loadBMP "assets/entities/player_2hp_0.bmp"
+    , loadBMP "assets/entities/player_2hp_1.bmp"
+    ]
+  , sequence 
+    [ loadBMP "assets/entities/player_3hp_0.bmp"
+    , loadBMP "assets/entities/player_3hp_1.bmp"
+    ]
   ]
 
 loadGoombaAnimation :: IO Animation

@@ -16,7 +16,7 @@ handlePlayerCollisions gameState@GameState { player } =
   foldl handleEvent gameState (playerCollisions player)
   -- Process each event individually
   where
-    handleEvent gs@GameState {player = p, entities = es, world = w} CollisionEvent { colEventTag, colEventAxis, colEventNormal }=
+    handleEvent gs@GameState {world = w} CollisionEvent { colEventTag, colEventAxis, colEventNormal }=
       case colEventTag of
         CTEntity eId ->
           case getEntity gs eId of
@@ -30,26 +30,32 @@ handlePlayerCollisions gameState@GameState { player } =
                     killEntity gs eId
                   else
                     -- Player touched goomba from side/bottom, take damage
-                    gs {player = p {playerPos = (0, 0)}, entities = es}
-              (EPowerup _ _) -> trace "Collected a powerup!" killEntity gs eId
+                    let 
+                      removeEntity gs' = killEntity gs' eId
+                    in removeEntity $ damagePlayer gs
+              (EPowerup _ _) -> 
+                healPlayer $ killEntity gs eId
               _            -> gs
         CTWorld  coords@(tX, tY)       ->
           -- trace ("Tile at (" ++ show x ++ ", " ++ show y ++ ")")
-          if colEventAxis == AxisY && snd colEventNormal < 0 -- check if collision was on bottom side of tile
-            then
-              let
-                hitTile = getTile w coords
+          let
+            hitTile = getTile w coords
+          in if colEventAxis == AxisY && snd colEventNormal < 0 -- check if collision was on bottom side of tile
+              then
                 -- Find tile hit, and destroy if breakable
-              in if isTileBreakable hitTile
-                  then gs { world = setTile w coords Air }
-                  -- Handle special behavior of some tiles
-                  else case hitTile of
+                if isTileBreakable hitTile
+                  then case hitTile of
                     QuestionBlockFull ->
-                      let w' = setTile w coords QuestionBlockEmpty
-                      --let w' = setTile w coords $ trace ("Pos: " ++ show coords) QuestionBlockEmpty
-                          gsAfterSpawn = spawnEntity gs (EPowerup 0 defaultPowerup { powerupPos = (fromIntegral tX + 0.5, fromIntegral (-tY) + 0.5) } )
+                      let 
+                        w' = setTile w coords QuestionBlockEmpty
+                      --w' = setTile w coords $ trace ("Pos: " ++ show coords) QuestionBlockEmpty
+                        newPowerup = EPowerup 0 defaultPowerup { powerupPos = (fromIntegral tX + 0.5, fromIntegral (-tY) + 0.5) }
+                        gsAfterSpawn = spawnEntity gs newPowerup
                       in gsAfterSpawn { world = w' }
-                    _             -> gs
-            else
-              gs
+                    _ -> gs { world = setTile w coords Air }
+                  else gs
+              else case hitTile of
+                Flag -> gs { nextState = NFinishLevel }
+                _    -> gs
+              
         _ -> gs

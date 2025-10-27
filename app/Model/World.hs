@@ -5,12 +5,9 @@ import Model.Collider
 
 -- Returns whether a given tile type can be broken by the Player
 isTileBreakable :: Tile -> Bool
-isTileBreakable Air                = False
-isTileBreakable Grass              = False
-isTileBreakable Crate              = True
-isTileBreakable MetalBox           = False
-isTileBreakable QuestionBlockFull  = False
-isTileBreakable QuestionBlockEmpty = False
+isTileBreakable Crate             = True
+isTileBreakable QuestionBlockFull = True
+isTileBreakable _                 = False
 
 -- Returns the tile at a given position
 getTile :: World -> (Int, Int) -> Tile

@@ -18,10 +18,12 @@ data GameState = GameState
   , pendingJump     :: Bool
   , jumpHeld        :: Bool
   , sprintHeld      :: Bool
-  } deriving (Show)
+  , menuState       :: MenuState
+  , nextState       :: NextState
+  }
 
 data MenuState = MenuState
-  { menuPlayerAnim   :: Animation
+  { menuPlayerAnim   :: [Animation]
   , menuDebugMode    :: Bool
   , menuScreenSize   :: (Int, Int)
   }
@@ -29,6 +31,12 @@ data MenuState = MenuState
 data AppState
   = Menu MenuState
   | Playing GameState
+
+data NextState
+  = NPlaying
+  | NDeath
+  | NMenu
+  | NFinishLevel
 
 -- Level geometry
 data World = World
@@ -45,6 +53,8 @@ data Tile
   | MetalBox
   | QuestionBlockFull
   | QuestionBlockEmpty
+  | Flag
+  | Spikes
   deriving (Eq, Ord, Show)
 
 data SlopeData = SlopeData
@@ -86,7 +96,7 @@ getEntityId (EPlatform pfId  ) = pfId
 data Player = Player
   { playerPos    :: Point
   , playerVel    :: Vector
-  , playerAnim   :: Animation
+  , playerAnim   :: [Animation]
   , onGround     :: Bool
   , health       :: Int
   , playerColSpec :: Maybe ColliderSpec

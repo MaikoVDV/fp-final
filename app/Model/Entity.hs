@@ -65,6 +65,19 @@ defaultPlayer = Player
   , lastMoveDir       = 0
   }
 
+-- Helper function for changing player's health
+setPlayerHealth :: GameState -> Int -> GameState
+setPlayerHealth gs@GameState{ player = p } h = 
+  gs 
+  { player = p { health = h }
+  , nextState = if h <= 0 then NDeath else NPlaying 
+  }
+
+-- Shorthands for common health changes
+damagePlayer :: GameState -> GameState
+damagePlayer gs@GameState{ player } = setPlayerHealth gs $ health player - 1
+healPlayer :: GameState -> GameState
+healPlayer gs@GameState{ player } = setPlayerHealth gs $ health player + 1
 
 
 defaultGoomba :: Goomba

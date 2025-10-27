@@ -112,10 +112,11 @@ saveLevel path gs = do
   BL.writeFile path (BB.toLazyByteString b)
 
 -- Load a level and construct a GameState using supplied resources and config
-loadLevel :: FilePath -> Bool -> TileMap -> Animation -> (Int, Int) -> IO GameState
-loadLevel path debugEnabled tileMap playerAnimation screenDims = do
+loadLevel :: FilePath -> Bool -> TileMap -> (Int, Int) -> IO GameState
+loadLevel path debugEnabled tileMap screenDims = do
   bs <- BS.readFile path
   animMap <- loadAnimMap
+  playerAnimation <- loadPlayerAnimation
   case parseLevel bs of
     Prelude.Left err -> ioError (userError ("Level load error: " ++ err))
     Prelude.Right (width, tiles1D, (px,py), spawns) -> do
@@ -156,6 +157,10 @@ loadLevel path debugEnabled tileMap playerAnimation screenDims = do
         , pendingJump = False
         , jumpHeld = False
         , sprintHeld = False
+        -- GameState heeft ook een menuState, zodat we vanuit de game terug naar t menu kunnen gaan (nog bij bijv. doodgaan)
+        -- weet alleen niet helemaal hoe dat opgeslagen moet worden met de codec
+        --, menuState = ???
+        --, nextState = ???
         }
 
 -- Parser for the level format
