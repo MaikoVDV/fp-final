@@ -134,7 +134,19 @@ renderBuilderWorld tilePixels world tileMap debugMode =
     colliderPics
       | debugMode = [Pictures (map (renderAABB tilePixels) (colliders world))]
       | otherwise = []
-  in Pictures (tilesPic : colliderPics)
+    -- Red overlay for non-drawable regions (outside current grid bounds)
+    widthPx  = fromIntegral (length (head (grid world))) * tilePixels
+    heightPx = fromIntegral (length (grid world)) * tilePixels
+    big      = 1000 * tilePixels
+    faintRed = makeColor 1 0 0 0.25
+    poly ps  = color faintRed (polygon ps)
+    -- Areas: left of x=0, above y=0, right of x=widthPx, below y=-heightPx
+    leftArea   = poly [(-big,  big), (0,    big), (0,   -big), (-big, -big)]
+    topArea    = poly [(0,     big), (widthPx, big), (widthPx, 0), (0, 0)]
+    rightArea  = poly [(widthPx, big), (big,  big), (big, -big), (widthPx, -big)]
+    bottomArea = poly [(0, -heightPx), (widthPx, -heightPx), (widthPx, -big), (0, -big)]
+    redOverlay = Pictures [leftArea, topArea, rightArea, bottomArea]
+  in Pictures ([redOverlay, tilesPic] ++ colliderPics)
 
 renderWorld :: Float -> GameState -> Picture
 renderWorld tilePixels GameState { world, tileMap, player, entities, debugMode } =
