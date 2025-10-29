@@ -3,9 +3,7 @@ module Controller.Collision where
 import Model.Types
 import Model.World
 import Model.Entity
-import Debug.Trace
 import Data.List (foldl')
-import Data.Maybe (fromMaybe)
 import Model.Collider
 
 

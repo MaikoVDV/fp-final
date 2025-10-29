@@ -38,6 +38,7 @@ update dt (Playing gs)       =
 updateGame :: Float -> GameState -> GameState
 updateGame dt =
   handleCollisionEvents
+  . resolveInterEnemyOverlaps
   . updateEntities dt
   . clearJump
   . updatePlayer dt
@@ -136,15 +137,11 @@ updateGoomba dt gs gId g@Goomba
     Just spec ->
       let velAfterAccel   = addVec vel (scaleVec totalAccel dt)
           displacement    = scaleVec velAfterAccel dt
-          enemyBlockers    = otherEnemyColliders gId (entities gs)
+          -- Only block against world and player; enemy separation handled globally
           blockers        = colliders (world gs)
                              ++ maybeToList (playerCollider (player gs))
-                             ++ enemyBlockers
           collider        = specToCollider pos (CTEntity gId) spec
-          (resolvedPos0, flags, events) = resolveMovement collider pos displacement blockers
-          -- If this goomba touched another enemy, revert to original position to avoid overlap
-          touchedEnemy     = any (collidedWithOtherEnemy gId (entities gs)) events
-          resolvedPos      = if touchedEnemy then pos else resolvedPos0
+          (resolvedPos, flags, events) = resolveMovement collider pos displacement blockers
           velAfterCollision    = applyCollisionFlags flags velAfterAccel
           contactDrag          = contactFrictionAccel (contactNormals flags) velAfterCollision
           velWithFriction      = addVec velAfterCollision (scaleVec contactDrag dt)
@@ -154,7 +151,7 @@ updateGoomba dt gs gId g@Goomba
             let probeOffset   = (dirSign * wallProbeDistance, 0)
                 probeCollider = specToCollider (addVecToPoint resolvedPos probeOffset) None spec
             in any (collides probeCollider) blockers
-          hitWall              = wallAheadProbe || touchedEnemy
+          hitWall              = wallAheadProbe
           newDirBase           = if hitWall then flipDir dir else dir
           newDir               = newDirBase
           adjVx                = if hitWall then 0 else fst velLimited
@@ -177,25 +174,7 @@ updateGoomba dt gs gId g@Goomba
     flipDir Types.Left  = Types.Right
     flipDir Types.Right = Types.Left
 
-    -- Colliders for other enemies (prevent inter-enemy overlap)
-    otherEnemyColliders :: Int -> [Entity] -> [Collider]
-    otherEnemyColliders selfId es =
-      let isOtherEnemy e = case e of
-            EGoomba  eid _ -> eid /= selfId
-            EKoopa   eid _ -> eid /= selfId
-            _              -> False
-          toCol e = entityCollider e
-      in mapMaybe toCol (filter isOtherEnemy es)
-
-    -- Detect if a collision event was with another enemy (goomba/koopa)
-    collidedWithOtherEnemy :: Int -> [Entity] -> CollisionEvent -> Bool
-    collidedWithOtherEnemy selfId es CollisionEvent { colEventTag } = case colEventTag of
-      CTEntity eid ->
-        eid /= selfId && any (\e -> case e of
-          EGoomba  id' _ -> id' == eid
-          EKoopa   id' _ -> id' == eid
-          _              -> False) es
-      _ -> False
+    -- Enemy-vs-enemy separation handled in resolveInterEnemyOverlaps
 updatePowerup :: Float -> GameState -> Int -> Powerup -> Powerup
 updatePowerup dt gs puId pu@Powerup
   { powerupPos = pos
@@ -251,3 +230,74 @@ updatePowerup dt gs puId pu@Powerup
       in (vx', vy)
     flipDir Types.Left  = Types.Right
     flipDir Types.Right = Types.Left
+
+-- After entities update, push overlapping enemies (goomba/koopa) apart symmetrically
+resolveInterEnemyOverlaps :: GameState -> GameState
+resolveInterEnemyOverlaps gs@GameState { entities = es } =
+  gs { entities = resolveAll es }
+  where
+    -- Do a couple of passes for stability
+    resolveAll :: [Entity] -> [Entity]
+    resolveAll = (!! 2) . iterate resolvePass
+
+    resolvePass :: [Entity] -> [Entity]
+    resolvePass ents = separatePairs 0 ents
+
+    separatePairs :: Int -> [Entity] -> [Entity]
+    separatePairs i ents
+      | i >= length ents = ents
+      | otherwise        = separateWith i (i + 1) ents
+
+    separateWith :: Int -> Int -> [Entity] -> [Entity]
+    separateWith i j ents
+      | j >= length ents = separatePairs (i + 1) ents
+      | otherwise        =
+          case (ents !! i, ents !! j) of
+            (e1, e2)
+              | isEnemy e1 && isEnemy e2
+              , Just c1 <- entityCollider e1
+              , Just c2 <- entityCollider e2
+              , Just (dx1, dy1, dx2, dy2) <- separation c1 c2 ->
+                  let ents'  = updateAt i (moveBy (dx1, dy1)) ents
+                      ents'' = updateAt j (moveBy (dx2, dy2)) ents'
+                  in separateWith i (j + 1) ents''
+              | otherwise -> separateWith i (j + 1) ents
+
+    isEnemy :: Entity -> Bool
+    isEnemy e = case e of
+      EGoomba _ _ -> True
+      EKoopa  _ _ -> True
+      _           -> False
+
+    moveBy :: Vector -> Entity -> Entity
+    moveBy (dx, dy) e = case e of
+      EGoomba eid g ->
+        let newPos = addVecToPoint (goombaPos g) (dx, dy)
+            newDir = if dx > 0 then Types.Right else if dx < 0 then Types.Left else goombaDir g
+        in EGoomba eid g { goombaPos = newPos, goombaDir = newDir }
+      EKoopa  eid k ->
+        let newPos = addVecToPoint (koopaPos k) (dx, dy)
+            newDir = if dx > 0 then Types.Right else if dx < 0 then Types.Left else koopaDir k
+        in EKoopa  eid k { koopaPos  = newPos, koopaDir = newDir }
+      _             -> e
+
+    updateAt :: Int -> (Entity -> Entity) -> [Entity] -> [Entity]
+    updateAt idx f xs =
+      let (pre, rest) = splitAt idx xs
+      in case rest of
+          (y:ys) -> pre ++ f y : ys
+          []     -> xs
+
+    separation :: Collider -> Collider -> Maybe (Float, Float, Float, Float)
+    separation (AABB (ax, ay) aw ah _) (AABB (bx, by) bw bh _)
+      | overlapX > 0 && overlapY > 0 =
+          if overlapX < overlapY
+            then let sx = sign (ax - bx) * (overlapX / 2)
+                 in Just ( sx, 0, -sx, 0 )
+            else let sy = sign (ay - by) * (overlapY / 2)
+                 in Just ( 0,  sy,  0, -sy )
+      | otherwise = Nothing
+      where
+        overlapX = (aw + bw) / 2 - abs (ax - bx)
+        overlapY = (ah + bh) / 2 - abs (ay - by)
+        sign v = if v >= 0 then 1 else -1
