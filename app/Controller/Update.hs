@@ -54,7 +54,7 @@ updateGame dt =
 updatePlayer :: Float -> GameState -> GameState
 updatePlayer dt gs =
   let p = player gs
-      blockers = colliders (world gs) ++ mapMaybe entityCollider (entities gs)
+      blockers = colliders (world gs) ++ blockingEntityColliders (entities gs)
       (jumpAccel, jumpTimer) = computeJumpHold dt gs p
       movedPlayer = applyMovement dt blockers gs jumpAccel p
       jumpTime'
@@ -63,11 +63,16 @@ updatePlayer dt gs =
       jumpDir'
         | onGround movedPlayer = upVector
         | otherwise            = playerJumpDir movedPlayer
+      -- Reset jump count when grounded; otherwise keep current
+      jumpsAvailable
+        | onGround movedPlayer = maxJumps
+        | otherwise            = jumpsLeft movedPlayer
       playerAfterHold = movedPlayer
         { playerJumpTime = jumpTime'
         , playerJumpDir  = jumpDir'
         }
-      canJump = pendingJump gs && (onGround playerAfterHold || isJust (playerSlide playerAfterHold))
+      -- Allow jump if we have jumps left (double/triple jump)
+      canJump = pendingJump gs && jumpsAvailable > 0
   in if canJump
         then
           let launchDir = computeJumpLaunchDir playerAfterHold
@@ -87,9 +92,21 @@ updatePlayer dt gs =
               , playerJumpTime = 0
               , playerJumpDir  = launchDir
               , playerSlide    = Nothing
+              , jumpsLeft      = jumpsAvailable - 1
               }
             }
-        else gs { player = playerAfterHold }
+        else gs { player = playerAfterHold { jumpsLeft = jumpsAvailable } }
+
+  where
+    blockingEntityColliders :: [Entity] -> [Collider]
+    blockingEntityColliders es = mapMaybe entityCollider (filter isBlocking es)
+      where
+        isBlocking :: Entity -> Bool
+        isBlocking e = case e of
+          EGoomba  _ _ -> True
+          EKoopa   _ _ -> True
+          EPlatform _   -> True
+          EPowerup _ _ -> False
 
 
 updateEntities :: Float -> GameState -> GameState

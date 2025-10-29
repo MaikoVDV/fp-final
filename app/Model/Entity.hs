@@ -3,6 +3,7 @@ module Model.Entity where
 import Model.Types
 import qualified Model.Types as Types
 import Data.List
+import Model.Config (maxJumps)
 
 getEntity :: GameState -> Int -> Maybe Entity
 getEntity GameState {entities = es} eId = 
@@ -63,6 +64,7 @@ defaultPlayer = Player
   , moveLeftHeld      = False
   , moveRightHeld     = False
   , lastMoveDir       = 0
+  , jumpsLeft         = maxJumps
   }
 
 -- Helper function for changing player's health
@@ -87,8 +89,8 @@ defaultGoomba = Goomba
   , goombaDir = Types.Left
   , goombaColSpec = Just ColliderSpec
       { colliderWidth = 0.9
-      , colliderHeight = 0.9
-      , colliderOffset = (0, 0)
+      , colliderHeight = 0.6
+      , colliderOffset = (0, -0.25)
       }
   , goombaOnGround = False
   , goombaCollisions = []

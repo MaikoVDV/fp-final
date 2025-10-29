@@ -57,15 +57,35 @@ applyCollisionFlags CollisionFlags { hitX, hitY } (vx, vy) =
   in (vx', vy')
 
 generateCollidersForWorld :: [[Tile]] -> [Collider]
-generateCollidersForWorld rows =
-  [ AABB (fromIntegral x + 0.5, negate (fromIntegral y) - 0.5) 1 1 (CTWorld (x, y))
+generateCollidersForWorld rows = concat
+  [ mergeRow y row
   | (y, row) <- zip ([0..] :: [Int]) rows
-  , (x, tile) <- zip ([0..] :: [Int]) row
-  , isSolid tile
   ]
   where
+    isSolid :: Tile -> Bool
     isSolid Air = False
     isSolid _   = True
+
+    mergeRow :: Int -> [Tile] -> [Collider]
+    mergeRow y row = go 0 []
+      where
+        rowLen = length row
+        yCenter = negate (fromIntegral y) - 0.5 :: Float
+
+        go :: Int -> [Collider] -> [Collider]
+        go x acc
+          | x >= rowLen = reverse acc
+          | not (isSolid (row !! x)) = go (x + 1) acc
+          | otherwise =
+              let start = x
+                  lenRun = runLength start
+                  endIdx = start + lenRun - 1
+                  centerX = fromIntegral start + (fromIntegral lenRun) / 2
+                  collider = AABB (centerX, yCenter) (fromIntegral lenRun) 1 (CTWorldSpan y start endIdx)
+              in go (endIdx + 1) (collider : acc)
+
+        runLength :: Int -> Int
+        runLength i = length (takeWhile id (map isSolid (take rowLen (drop i row))))
 
 entityCollidersForState :: GameState -> [Collider]
 entityCollidersForState GameState { player, entities } =

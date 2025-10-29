@@ -10,6 +10,7 @@ import Graphics.Gloss
 loadTileMap :: IO TileMap
 loadTileMap = do
   grassPic              <- loadBMP "assets/tiles/grass.bmp"
+  earthPic              <- loadBMP "assets/tiles/earth.bmp"
   cratePic              <- loadBMP "assets/tiles/crate.bmp"
   metalBoxPic           <- loadBMP "assets/tiles/metal_box.bmp"
   questionBlockFullPic  <- loadBMP "assets/tiles/question_block_full.bmp"
@@ -18,6 +19,7 @@ loadTileMap = do
   spikesPic             <- loadBMP "assets/tiles/spikes.bmp"
   return $ Map.fromList
     [ (Grass,              grassPic)
+    , (Earth,              earthPic)
     , (Crate,              cratePic)
     , (MetalBox,           metalBoxPic)
     , (QuestionBlockFull,  questionBlockFullPic)

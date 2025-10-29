@@ -39,7 +39,7 @@ groundWalkAccel, groundSprintAccel, groundMoveDecel, airWalkAccel, airSprintAcce
 groundWalkAccel = 50
 groundSprintAccel = 100
 groundMoveDecel = 125
-airWalkAccel = 10
+airWalkAccel = 9
 airSprintAccel = 17
 airMoveDecel = 28
 
@@ -52,3 +52,7 @@ slideProbeDistance = 0.02
 
 wallProbeDistance :: Float
 wallProbeDistance = 0.05
+
+-- Maximum number of jumps before needing to touch the ground
+maxJumps :: Int
+maxJumps = 2

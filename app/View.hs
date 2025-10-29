@@ -34,18 +34,20 @@ viewGame :: GameState -> Picture
 viewGame gs@GameState { player, screenSize, frameCount } =
   let tilePixels = tilePixelsForState gs
       (px, py) = playerPos player
-      (_, screenHeightInt) = screenSize
+      (screenWidthInt, screenHeightInt) = screenSize
+      screenWidth  = fromIntegral screenWidthInt
       screenHeight = fromIntegral screenHeightInt
       desiredPlayerScreenFraction = 1 / 3 :: Float
       targetPlayerY = (-0.5 + desiredPlayerScreenFraction) * screenHeight
       camX = -px * tilePixels
       camY = targetPlayerY - (py * tilePixels)
-  in translate camX camY $
-       Pictures
-         [ renderWorld tilePixels gs 
-         , renderEntities tilePixels gs
-         , renderPlayer tilePixels player frameCount
-         ]
+      worldPic = translate camX camY $
+        Pictures
+          [ renderWorld tilePixels gs 
+          , renderEntities tilePixels gs
+          , renderPlayer tilePixels player frameCount
+          ]
+  in Pictures [ worldPic, renderHUD screenWidth screenHeight gs ]
 
 renderMenu :: MenuState -> Picture
 renderMenu MenuState { menuDebugMode } =
@@ -73,12 +75,27 @@ renderWorld tilePixels GameState { world, tileMap, player, entities, debugMode }
   let 
     getTileSprite :: TileMap -> Tile -> Picture
     getTileSprite m t = Map.findWithDefault blank t m
+
+    isGround :: Tile -> Bool
+    isGround Grass = True
+    isGround Earth = True
+    isGround _     = False
+
+    hasGroundAbove :: Int -> Int -> [[Tile]] -> Bool
+    hasGroundAbove x y g
+      | y <= 0    = False
+      | otherwise = isGround ((g !! (y - 1)) !! x)
+
     tilesPic = Pictures
-      [ translate (xWorld * tilePixels) (yWorld * tilePixels) (withTileScale tilePixels (getTileSprite tileMap tile))
+      [ let t' = case tile of
+                    Grass | hasGroundAbove x y (grid world) -> Earth
+                    _                                       -> tile
+            xWorld = fromIntegral x + 0.5
+            yWorld = negate (fromIntegral y) - 0.5
+        in translate (xWorld * tilePixels) (yWorld * tilePixels)
+             (withTileScale tilePixels (getTileSprite tileMap t'))
       | (y, row)  <- zip ([0..] :: [Int]) $ grid world
       , (x, tile) <- zip ([0..] :: [Int]) row
-      , let xWorld = fromIntegral x + 0.5
-      , let yWorld = negate (fromIntegral y) - 0.5
       ]
     colliderPics
       | debugMode =
@@ -140,3 +157,15 @@ renderAABB tileSize (AABB (x, y) w h _) =
 dirToPictureScaleX :: MoveDir -> Float
 dirToPictureScaleX Types.Left  = 1
 dirToPictureScaleX Types.Right = -1
+
+-- Simple HUD: show jumps remaining in top-left corner
+renderHUD :: Float -> Float -> GameState -> Picture
+renderHUD screenW screenH GameState { player, debugMode } =
+  if not debugMode then blank else
+    let margin = 20
+        x = -screenW / 2 + margin
+        y =  screenH / 2 - (margin + 20)
+        txt = "Jumps: " ++ show (jumpsLeft player)
+        -- Gloss text has a base height of ~100 units at scale 1.0
+        s = (screenH * 0.08) / 100.0
+    in translate x y $ color white $ scale s s $ text txt

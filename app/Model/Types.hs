@@ -49,6 +49,7 @@ data World = World
 data Tile
   = Air
   | Grass
+  | Earth
   | Crate
   | MetalBox
   | QuestionBlockFull
@@ -110,6 +111,7 @@ data Player = Player
   , moveLeftHeld    :: Bool
   , moveRightHeld   :: Bool
   , lastMoveDir     :: Float
+  , jumpsLeft       :: Int
   } deriving (Eq, Show)
 
 data Goomba = Goomba
@@ -149,12 +151,13 @@ instance Show Collider where
   show AABB { tag } = show tag
 
 
-data ColliderTag = None | CTWorld (Int, Int) | CTPlayer Player | CTEntity Int
+data ColliderTag = None | CTWorld (Int, Int) | CTWorldSpan Int Int Int | CTPlayer Player | CTEntity Int
   deriving (Eq)
 
 instance Show ColliderTag where
   show None             = "Untagged collider"
   show (CTWorld (x, y)) = "World collider at (" ++ show x ++ ", " ++ show y ++ ")"
+  show (CTWorldSpan y s e) = "World span at row " ++ show y ++ ": [" ++ show s ++ ", " ++ show e ++ "]"
   show (CTPlayer _)     = "Player colider"
   show (CTEntity gId)   = "Entity colider {id: " ++ show gId ++ " }"
 

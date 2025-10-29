@@ -30,6 +30,7 @@ tileId Crate              = 2
 tileId MetalBox           = 3
 tileId QuestionBlockFull  = 4
 tileId QuestionBlockEmpty = 5
+tileId Earth              = 6
 
 tileFromId :: Word8 -> Maybe Tile
 tileFromId 0 = Just Air
@@ -37,6 +38,7 @@ tileFromId 1 = Just Grass
 tileFromId 2 = Just Crate
 tileFromId 3 = Just QuestionBlockFull
 tileFromId 4 = Just QuestionBlockEmpty
+tileFromId 6 = Just Earth
 tileFromId _ = Nothing
 
 -- Fixed-point for positions: store tile units * 256 in Int16

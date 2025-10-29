@@ -114,6 +114,13 @@ resolveMovement :: Collider -> Point -> Vector -> [Collider]
 resolveMovement collider start displacement blockers =
   go 3 start displacement noCollisionFlags []
   where
+    -- Preserve the collider's offset relative to the entity's logical position
+    offset :: Vector
+    offset = subPoints (aPos collider) start
+
+    placeAt :: Point -> Collider
+    placeAt p = collider { aPos = addVecToPoint p offset }
+
     go :: Int -> Point -> Vector -> CollisionFlags -> [CollisionEvent] -> (Point, CollisionFlags, [CollisionEvent])
     go 0 pos _ flags events = (pos, flags, events)
     go _ pos disp flags events | nearZeroVec disp = (pos, flags, events) -- if remaining displacement is near zero, end recursion
@@ -123,13 +130,14 @@ resolveMovement collider start displacement blockers =
       in case sweep of
            SweepClear finalPos -> (finalPos, flags, events)
            SweepHit { safePos = safe, hitPos, hitBlocker = blocker } ->
-             let (normal, axis) = collisionNormal collider { aPos = hitPos} blocker
+             let placedAtHit = placeAt hitPos
+                 (normal, axis) = collisionNormal placedAtHit blocker
                  remainder = subPoints endPos safe
                  remainingAfterCollision = removeNormalComponent remainder axis
                  flagsThisCollision = collisionFlagsFor axis normal
                  combinedFlags = combineFlags flags flagsThisCollision
                  newEvent = CollisionEvent {
-                  colEventTag    = tag blocker,
+                  colEventTag    = worldEventTag placedAtHit blocker,
                   colEventAxis   = axis,
                   colEventNormal = normal
                  }
@@ -149,7 +157,7 @@ resolveMovement collider start displacement blockers =
           | otherwise =
               let t = fromIntegral i / fromIntegral steps
                   current = addVecToPoint pos (scaleVec disp t)
-                  hit = find (collides collider {aPos = current }) blockers
+                  hit = find (collides (placeAt current)) blockers
               in case hit of
                   Just blocker -> SweepHit { safePos = prevPos, hitPos = current, hitBlocker = blocker }
                   Nothing      -> sweep (i + 1) current
@@ -188,6 +196,19 @@ resolveMovement collider start displacement blockers =
             AxisX -> (dirX, 0)
             AxisY -> (0, dirY)
       in (normal, axis)
+
+    -- For world colliders that are merged spans, convert the blocker tag into
+    -- a precise CTWorld (x,y) using the entity position at impact.
+    worldEventTag :: Collider -> Collider -> ColliderTag
+    worldEventTag (AABB (ex, _) _ _ _) blk =
+      case tag blk of
+        CTWorld (tx, ty) -> CTWorld (tx, ty)
+        CTWorldSpan ty start end ->
+          let tx = max start (min end (floor ex))
+          in CTWorld (tx, ty)
+        CTPlayer p -> CTPlayer p
+        CTEntity i -> CTEntity i
+        None       -> None
 
 -- Used in applyMovement (for player) and updateGoomba
 contactFrictionAccel :: [Vector] -> Vector -> Vector

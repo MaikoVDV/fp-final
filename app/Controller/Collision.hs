@@ -5,6 +5,8 @@ import Model.World
 import Model.Entity
 import Debug.Trace
 import Data.List (foldl')
+import Data.Maybe (fromMaybe)
+import Model.Collider
 
 
 handleCollisionEvents :: GameState -> GameState
@@ -66,15 +68,16 @@ handlePlayerCollisions gameState@GameState { player } =
 -- Handle entity-side collision outcomes that the player handler doesn't catch
 -- Specifically: allow powerups to be collected when they move into the player
 handlePowerupCollisions :: GameState -> GameState
-handlePowerupCollisions gs@GameState { entities } =
+handlePowerupCollisions gs@GameState { entities, player = p } =
   foldl' step gs entities
   where
     step acc e = case e of
       EPowerup eId pu ->
-        let touchedPlayer = any isPlayerEvent (powerupCollisions pu)
-        in if touchedPlayer
+        let touchedPlayerEvent = any isPlayerEvent (powerupCollisions pu)
+            overlapWithPlayer  = overlapsPlayer acc eId pu
+            shouldCollect      = touchedPlayerEvent || overlapWithPlayer
+        in if shouldCollect
             then case getEntity acc eId of
-                  -- If already removed (e.g., collected via player movement), do nothing
                   Nothing -> acc
                   Just _  -> healPlayer (killEntity acc eId)
             else acc
@@ -84,6 +87,12 @@ handlePowerupCollisions gs@GameState { entities } =
     isPlayerEvent CollisionEvent { colEventTag } = case colEventTag of
       CTPlayer _ -> True
       _          -> False
+
+    overlapsPlayer :: GameState -> Int -> Powerup -> Bool
+    overlapsPlayer st puId pu =
+      case (playerCollider (player st), powerupCollider puId pu) of
+        (Just pc, Just ec) -> collides pc ec
+        _                  -> False
 
 -- Allow enemies to affect the player even if only the enemy moved
 -- Logic mirrors player-side handling:
