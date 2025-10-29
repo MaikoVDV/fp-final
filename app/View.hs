@@ -11,6 +11,23 @@ import Model.Collider
 import Model.InitialState
 import Model.Config
 
+-- Shared helper: decide which tile to render based on neighbors
+-- If placing Grass and there is ground above, render Earth instead
+renderedTileFor :: [[Tile]] -> Int -> Int -> Tile -> Tile
+renderedTileFor rows x y tile =
+  case tile of
+    Grass | hasGroundAbove x y rows -> Earth
+    _                               -> tile
+  where
+    isGround :: Tile -> Bool
+    isGround Grass = True
+    isGround Earth = True
+    isGround _     = False
+
+    hasGroundAbove :: Int -> Int -> [[Tile]] -> Bool
+    hasGroundAbove _ yi _ | yi <= 0 = False
+    hasGroundAbove xi yi g = isGround ((g !! (yi - 1)) !! xi)
+
 tilePixelsForState :: GameState -> Float
 tilePixelsForState GameState { tileZoom, screenSize } =
   baseTilePixelSizeForScreen screenSize * tileZoom * scaleFactor
@@ -29,6 +46,7 @@ view = return . viewPure
 viewPure :: AppState -> Picture
 viewPure (Menu menuState) = renderMenu menuState
 viewPure (Playing gs) = viewGame gs
+viewPure (Building bs) = viewBuilder bs
 
 viewGame :: GameState -> Picture
 viewGame gs@GameState { player, screenSize, frameCount } =
@@ -60,7 +78,7 @@ renderMenu MenuState { menuDebugMode } =
         color white $
           translate (-280) (-40) $
             scale 0.2 0.2 $
-              text "Press Enter to start"
+              text "Press Enter to play | Space for builder"
       debugText
         | menuDebugMode =
             color yellow $
@@ -70,26 +88,63 @@ renderMenu MenuState { menuDebugMode } =
         | otherwise = blank
   in Pictures [titleText, promptText, debugText]
 
+-- Builder view
+viewBuilder :: BuilderState -> Picture
+viewBuilder bs@BuilderState { builderWorld, builderTileMap, builderTileZoom, builderScreenSize, builderDebugMode, builderCam = (camX, camY) } =
+  let tilePixels = baseTilePixelSizeForScreen builderScreenSize * builderTileZoom * scaleFactor
+      worldPic   = renderBuilderWorld tilePixels builderWorld builderTileMap builderDebugMode
+      previewPic = renderBuilderPreview tilePixels bs
+  in translate camX camY (Pictures [worldPic, previewPic])
+
+renderBuilderPreview :: Float -> BuilderState -> Picture
+renderBuilderPreview tilePixels BuilderState { builderWorld = world, builderTileMap = tileMap, builderLastMouse = (mx, my), builderCam = (camX, camY), builderBrush } =
+  let wx = (mx - camX) / tilePixels
+      wy = (my - camY) / tilePixels
+      x  = floor wx
+      y  = floor ((-wy))
+      rows = grid world
+      inBounds = y >= 0 && x >= 0 && y < length rows && x < length (head rows)
+      getTileSprite m t = Map.findWithDefault blank t m
+  in if not inBounds
+        then blank
+        else
+          let t' = renderedTileFor rows x y builderBrush
+              xWorld = fromIntegral x + 0.5
+              yWorld = negate (fromIntegral y) - 0.5
+              sprite = withTileScale tilePixels (getTileSprite tileMap t')
+          in translate (xWorld * tilePixels) (yWorld * tilePixels)
+               (color (makeColor 1 1 1 0.5) sprite)
+
+renderBuilderWorld :: Float -> World -> TileMap -> Bool -> Picture
+renderBuilderWorld tilePixels world tileMap debugMode =
+  let 
+    getTileSprite :: TileMap -> Tile -> Picture
+    getTileSprite m t = Map.findWithDefault blank t m
+
+    tilesPic = Pictures
+      [ let t' = case tile of
+                    _ -> renderedTileFor (grid world) x y tile
+            xWorld = fromIntegral x + 0.5
+            yWorld = negate (fromIntegral y) - 0.5
+        in translate (xWorld * tilePixels) (yWorld * tilePixels)
+             (withTileScale tilePixels (getTileSprite tileMap t'))
+      | (y, row)  <- zip ([0..] :: [Int]) $ grid world
+      , (x, tile) <- zip ([0..] :: [Int]) row
+      ]
+    colliderPics
+      | debugMode = [Pictures (map (renderAABB tilePixels) (colliders world))]
+      | otherwise = []
+  in Pictures (tilesPic : colliderPics)
+
 renderWorld :: Float -> GameState -> Picture
 renderWorld tilePixels GameState { world, tileMap, player, entities, debugMode } =
   let 
     getTileSprite :: TileMap -> Tile -> Picture
     getTileSprite m t = Map.findWithDefault blank t m
 
-    isGround :: Tile -> Bool
-    isGround Grass = True
-    isGround Earth = True
-    isGround _     = False
-
-    hasGroundAbove :: Int -> Int -> [[Tile]] -> Bool
-    hasGroundAbove x y g
-      | y <= 0    = False
-      | otherwise = isGround ((g !! (y - 1)) !! x)
-
     tilesPic = Pictures
       [ let t' = case tile of
-                    Grass | hasGroundAbove x y (grid world) -> Earth
-                    _                                       -> tile
+                    _ -> renderedTileFor (grid world) x y tile
             xWorld = fromIntegral x + 0.5
             yWorld = negate (fromIntegral y) - 0.5
         in translate (xWorld * tilePixels) (yWorld * tilePixels)
@@ -164,8 +219,9 @@ renderHUD screenW screenH GameState { player, debugMode } =
   if not debugMode then blank else
     let margin = 20
         x = -screenW / 2 + margin
-        y =  screenH / 2 - (margin + 20)
+        -- Place text fully within the screen: subtract its scaled height
+        s = (screenH * 0.08) / 100.0  -- ~8% of screen height
+        textHeight = 100 * s          -- Gloss baseline ~100 units
+        y =  screenH / 2 - margin - textHeight
         txt = "Jumps: " ++ show (jumpsLeft player)
-        -- Gloss text has a base height of ~100 units at scale 1.0
-        s = (screenH * 0.08) / 100.0
     in translate x y $ color white $ scale s s $ text txt

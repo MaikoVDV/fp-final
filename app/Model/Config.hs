@@ -40,7 +40,7 @@ groundWalkAccel = 50
 groundSprintAccel = 100
 groundMoveDecel = 125
 airWalkAccel = 9
-airSprintAccel = 17
+airSprintAccel = 16
 airMoveDecel = 28
 
 goombaWalkSpeed, goombaMoveAccel :: Float
@@ -56,3 +56,15 @@ wallProbeDistance = 0.05
 -- Maximum number of jumps before needing to touch the ground
 maxJumps :: Int
 maxJumps = 2
+
+-- Vertical velocity applied to player when stomping an enemy
+stompBounceVelocity :: Float
+stompBounceVelocity = 8
+
+-- Time window after stomping in which a jump gets boosted
+stompJumpWindow :: Float
+stompJumpWindow = 0.3
+
+-- Jump impulse strength when jumping within stompJumpWindow after a stomp
+stompBoostedJumpImpulse :: Float
+stompBoostedJumpImpulse = 10

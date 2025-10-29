@@ -21,6 +21,7 @@ update dt (Playing gs)       =
   in case nextState gs' of
     NPlaying -> return . Playing $ gs'
     _       -> return (Menu $ menuState gs')
+update _ (Building bs)      = return (Building bs)
 
 -- updateGame :: Float -> GameState -> GameState
 -- updateGame dt gs =
@@ -68,16 +69,20 @@ updatePlayer dt gs =
       jumpsAvailable
         | onGround movedPlayer = maxJumps
         | otherwise            = jumpsLeft movedPlayer
+      -- Countdown stomp jump boost timer
+      stompBoostTimeLeft = max 0 (stompJumpTimeLeft movedPlayer - dt)
       playerAfterHold = movedPlayer
         { playerJumpTime = jumpTime'
         , playerJumpDir  = jumpDir'
+        , stompJumpTimeLeft = stompBoostTimeLeft
         }
       -- Allow jump if we have jumps left (double/triple jump)
       canJump = pendingJump gs && jumpsAvailable > 0
   in if canJump
         then
           let launchDir = computeJumpLaunchDir playerAfterHold
-              impulse   = scaleVec launchDir jumpImpulse
+              impulseMag = if stompBoostTimeLeft > 0 then stompBoostedJumpImpulse else jumpImpulse
+              impulse   = scaleVec launchDir impulseMag
 
               computeJumpLaunchDir :: Player -> Vector
               computeJumpLaunchDir Player { onGround, playerSlide, playerJumpDir } =
@@ -88,12 +93,15 @@ updatePlayer dt gs =
           in 
             gs { player = 
               playerAfterHold
-              { playerVel      = addVec (playerVel playerAfterHold) impulse
+              { playerVel      =
+                  let (vx, _) = playerVel playerAfterHold
+                  in addVec (vx, 0) impulse
               , onGround       = False
               , playerJumpTime = 0
               , playerJumpDir  = launchDir
               , playerSlide    = Nothing
               , jumpsLeft      = jumpsAvailable - 1
+              , stompJumpTimeLeft = if stompBoostTimeLeft > 0 then 0 else stompBoostTimeLeft
               }
             }
         else gs { player = playerAfterHold { jumpsLeft = jumpsAvailable } }

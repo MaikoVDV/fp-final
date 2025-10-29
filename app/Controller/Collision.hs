@@ -1,10 +1,12 @@
 module Controller.Collision where
 
 import Model.Types
+import qualified Model.Types as Types
 import Model.World
 import Model.Entity
 import Data.List (foldl')
 import Model.Collider
+import Model.Config (stompBounceVelocity, stompJumpWindow)
 
 
 handleCollisionEvents :: GameState -> GameState
@@ -29,8 +31,12 @@ handlePlayerCollisions gameState@GameState { player } =
               (EGoomba _ _) ->
                 if colEventAxis == AxisY && snd colEventNormal > 0 -- check if player jumped on top of goomba
                   then
-                    -- Player touched goomba from top, kill goomba
-                    killEntity gs eId
+                    -- Player touched goomba from top: kill goomba and bounce player up
+                    let gsKilled = killEntity gs eId
+                        p0 = Types.player gsKilled
+                        (vx, _) = playerVel p0
+                        p' = p0 { playerVel = (vx, stompBounceVelocity), onGround = False, stompJumpTimeLeft = stompJumpWindow }
+                    in gsKilled { player = p' }
                   else
                     -- Player touched goomba from side/bottom, take damage
                     let 
@@ -116,7 +122,12 @@ handleEnemyCollisions gs@GameState { entities } =
           in case getEntity acc eId of
               Nothing -> acc
               Just _  -> if stomp
-                          then killEntity acc eId
+                          then let accBounce =
+                                       let p0 = Types.player acc
+                                           (vx, _) = playerVel p0
+                                           p' = p0 { playerVel = (vx, stompBounceVelocity), onGround = False, stompJumpTimeLeft = stompJumpWindow }
+                                       in acc { player = p' }
+                               in killEntity accBounce eId
                           else let acc' = damagePlayer acc
                                in killEntity acc' eId
 

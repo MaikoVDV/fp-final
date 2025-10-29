@@ -10,6 +10,8 @@ import Model.Types
 import MathUtils
 import Model.InitialState
 import Model.Config
+import Model.World
+import Assets
 
 input :: Event -> AppState -> IO AppState
 input (EventKey (SpecialKey KeyEsc) Down _ _) appState = exitSuccess >> return appState
@@ -18,9 +20,11 @@ input e appState =
   case appState of
     Menu menuState  -> handleMenuInput e menuState
     Playing gameState -> return . Playing $ handlePlayingInput e gameState
+    Building builderState -> return . Building $ handleBuildingInput e builderState
 
 handleMenuInput :: Event -> MenuState -> IO AppState
 handleMenuInput (EventKey (SpecialKey KeyEnter) Down _ _) menuState = startGame menuState
+handleMenuInput (EventKey (SpecialKey KeySpace) Down _ _) menuState = startBuilder menuState
 handleMenuInput _ menuState = return (Menu menuState)
 
 startGame :: MenuState -> IO AppState
@@ -29,6 +33,29 @@ startGame menuState = do
   when (menuDebugMode menuState) $
     print (colliders (world initialState))
   return (Playing initialState)
+
+startBuilder :: MenuState -> IO AppState
+startBuilder ms@MenuState { menuDebugMode, menuScreenSize } = do
+  tileMap <- loadTileMap
+  let width = 31
+      height = 16
+      emptyRow = replicate width Air
+      grid = replicate height emptyRow
+      builderWorld = World { grid = grid, colliders = [], slopes = [] }
+      bs = BuilderState
+             { builderWorld = builderWorld
+             , builderTileMap = tileMap
+             , builderTileZoom = 1.0
+             , builderScreenSize = menuScreenSize
+             , builderDebugMode = menuDebugMode
+             , builderBrush = Grass
+             , builderCam = (0, 0)
+             , builderPanning = False
+             , builderLastMouse = (0, 0)
+             , builderLMBHeld = False
+             , builderLastPaint = Nothing
+             }
+  return (Building bs)
 
 handlePlayingInput :: Event -> GameState -> GameState
 -- Movement: arrows and WASD
@@ -62,6 +89,45 @@ handlePlayingInput (EventKey (SpecialKey KeySpace) Up   _ _) gs = gs { jumpHeld 
 handlePlayingInput (EventKey (SpecialKey KeyShiftL) Down _ _) gs = gs { sprintHeld = True }
 handlePlayingInput (EventKey (SpecialKey KeyShiftL) Up   _ _) gs = gs { sprintHeld = False }
 handlePlayingInput _ gs = gs
+
+-- Level Builder input: place current brush (Grass) on left-click on non-negative tile indices
+handleBuildingInput :: Event -> BuilderState -> BuilderState
+-- Place grass with left click
+handleBuildingInput (EventKey (MouseButton LeftButton) Down _ mousePos@(mx, my)) bs =
+  let bs' = bs { builderLMBHeld = True }
+  in paintAtMouse mx my bs'
+handleBuildingInput (EventKey (MouseButton LeftButton) Up _ _) bs = bs { builderLMBHeld = False, builderLastPaint = Nothing }
+-- Start/stop panning with right mouse button
+handleBuildingInput (EventKey (MouseButton RightButton) Down _ mousePos) bs = bs { builderPanning = True, builderLastMouse = mousePos }
+handleBuildingInput (EventKey (MouseButton RightButton) Up   _ _)        bs = bs { builderPanning = False }
+-- Pan camera while dragging
+handleBuildingInput (EventMotion (mx, my)) bs@BuilderState { builderPanning = True, builderLastMouse = (lx, ly), builderCam = (cx, cy) } =
+  bs { builderCam = (cx + (mx - lx), cy + (my - ly)), builderLastMouse = (mx, my) }
+handleBuildingInput (EventMotion (mx, my)) bs@BuilderState { builderLMBHeld = True } = paintAtMouse mx my (bs { builderLastMouse = (mx, my) })
+handleBuildingInput (EventMotion mousePos) bs = bs { builderLastMouse = mousePos }
+-- Zoom with scroll wheel
+handleBuildingInput (EventKey (MouseButton WheelUp) Down _ _) bs = adjustBuilderZoom zoomStep bs
+handleBuildingInput (EventKey (MouseButton WheelDown) Down _ _) bs = adjustBuilderZoom (-zoomStep) bs
+handleBuildingInput _ bs = bs
+
+adjustBuilderZoom :: Float -> BuilderState -> BuilderState
+adjustBuilderZoom delta bs@BuilderState { builderTileZoom } =
+  let newVal = clampTileZoom (builderTileZoom + delta)
+  in bs { builderTileZoom = newVal }
+
+-- Helper: paint current brush at mouse position if it corresponds to a new valid tile
+paintAtMouse :: Float -> Float -> BuilderState -> BuilderState
+paintAtMouse mx my bs@BuilderState { builderWorld = w, builderScreenSize, builderTileZoom, builderCam = (camX, camY), builderLastPaint } =
+  let tilePixels = baseTilePixelSizeForScreen builderScreenSize * builderTileZoom * scaleFactor
+      wx = (mx - camX) / tilePixels
+      wy = (my - camY) / tilePixels
+      col = floor wx
+      row = floor ((-wy))
+      inBounds = row >= 0 && col >= 0 && row < length (grid w) && col < length (head (grid w))
+      sameAsLast = builderLastPaint == Just (col, row)
+  in if inBounds && not sameAsLast
+        then bs { builderWorld = setTile w (col, row) Grass, builderLastPaint = Just (col, row) }
+        else bs
 
 
 computeJumpHold :: Float -> GameState -> Player -> (Vector, Float)

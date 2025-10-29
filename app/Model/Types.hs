@@ -31,6 +31,7 @@ data MenuState = MenuState
 data AppState
   = Menu MenuState
   | Playing GameState
+  | Building BuilderState
 
 data NextState
   = NPlaying
@@ -66,6 +67,21 @@ data SlopeData = SlopeData
 
 type TileMap = Map.Map Tile Picture
 type AnimMap = Map.Map EntityType Animation
+
+-- Level Builder
+data BuilderState = BuilderState
+  { builderWorld      :: World
+  , builderTileMap    :: TileMap
+  , builderTileZoom   :: Float
+  , builderScreenSize :: (Int, Int)
+  , builderDebugMode  :: Bool
+  , builderBrush      :: Tile
+  , builderCam        :: (Float, Float)
+  , builderPanning    :: Bool
+  , builderLastMouse  :: (Float, Float)
+  , builderLMBHeld    :: Bool
+  , builderLastPaint  :: Maybe (Int, Int)
+  }
 
 -- Entities
 data Entity
@@ -112,6 +128,7 @@ data Player = Player
   , moveRightHeld   :: Bool
   , lastMoveDir     :: Float
   , jumpsLeft       :: Int
+  , stompJumpTimeLeft :: Float
   } deriving (Eq, Show)
 
 data Goomba = Goomba

@@ -50,8 +50,8 @@ defaultPlayer = Player
   -- default player animation is unset, doing otherwise would require impurity. Just remember to always set playerAnim when spawning
   , playerAnim        = [] 
   , playerColSpec     = Just ColliderSpec
-    { colliderWidth   = 0.90
-    , colliderHeight  = 1.25
+    { colliderWidth   = 0.85
+    , colliderHeight  = 1.1
     , colliderOffset  = (0, 0)
     }
   , playerJumpTime    = 0
@@ -65,6 +65,7 @@ defaultPlayer = Player
   , moveRightHeld     = False
   , lastMoveDir       = 0
   , jumpsLeft         = maxJumps
+  , stompJumpTimeLeft = 0
   }
 
 -- Helper function for changing player's health
