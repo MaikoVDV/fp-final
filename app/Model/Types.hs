@@ -22,10 +22,16 @@ data GameState = GameState
   , nextState       :: NextState
   }
 
+data MenuPage = MainMenu | CustomLevels | BuilderSelect | BuilderName deriving (Eq, Show)
+
 data MenuState = MenuState
   { menuPlayerAnim   :: [Animation]
   , menuDebugMode    :: Bool
   , menuScreenSize   :: (Int, Int)
+  , menuFocus        :: Int           -- focused index (context-sensitive)
+  , menuPage         :: MenuPage      -- which menu page to render
+  , menuCustomFiles  :: [FilePath]    -- cached custom level file list
+  , menuInput        :: String        -- generic text input buffer (e.g., new level name)
   }
 
 data AppState
@@ -81,6 +87,7 @@ data BuilderState = BuilderState
   , builderLastMouse  :: (Float, Float)
   , builderLMBHeld    :: Bool
   , builderLastPaint  :: Maybe (Int, Int)
+  , builderFilePath   :: Maybe FilePath
   }
 
 -- Entities
@@ -129,6 +136,7 @@ data Player = Player
   , lastMoveDir     :: Float
   , jumpsLeft       :: Int
   , stompJumpTimeLeft :: Float
+  , playerAnimClock :: Float
   } deriving (Eq, Show)
 
 data Goomba = Goomba

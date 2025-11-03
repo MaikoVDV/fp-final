@@ -1,7 +1,7 @@
 module Controller.Update where
 
 import Graphics.Gloss
-import Data.Maybe (mapMaybe, maybeToList, isJust)
+import Data.Maybe (mapMaybe, maybeToList)
 
 import Model.Types
 import qualified Model.Types as Types
@@ -44,7 +44,7 @@ updateGame dt =
   . clearJump
   . updatePlayer dt
   . incrementFrame
-  where 
+  where
     incrementFrame :: GameState -> GameState
     incrementFrame gs@GameState { frameCount }
       = gs {frameCount = frameCount + 1, nextState = NPlaying}
@@ -59,6 +59,14 @@ updatePlayer dt gs =
       blockers = colliders (world gs) ++ blockingEntityColliders (entities gs)
       (jumpAccel, jumpTimer) = computeJumpHold dt gs p
       movedPlayer = applyMovement dt blockers gs jumpAccel p
+      -- Advance animation clock proportionally to horizontal speed and dt,
+      -- only while a left/right key is held.
+      vxAbs = abs (fst (playerVel movedPlayer))
+      movingInput = moveLeftHeld movedPlayer || moveRightHeld movedPlayer
+      animRateScale = 2.5 -- frames per second at 1 unit/s
+      animClock'
+        | movingInput = playerAnimClock movedPlayer + vxAbs * animRateScale * dt
+        | otherwise   = playerAnimClock movedPlayer
       jumpTime'
         | onGround movedPlayer = jumpHoldDuration
               | otherwise            = jumpTimer
@@ -75,6 +83,7 @@ updatePlayer dt gs =
         { playerJumpTime = jumpTime'
         , playerJumpDir  = jumpDir'
         , stompJumpTimeLeft = stompBoostTimeLeft
+        , playerAnimClock = animClock'
         }
       -- Allow jump if we have jumps left (double/triple jump)
       canJump = pendingJump gs && jumpsAvailable > 0
@@ -90,8 +99,8 @@ updatePlayer dt gs =
                   _ | onGround -> upVector
                     | Just normal <- playerSlide -> addVec normal upVector
                     | otherwise -> playerJumpDir
-          in 
-            gs { player = 
+          in
+            gs { player =
               playerAfterHold
               { playerVel      =
                   let (vx, _) = playerVel playerAfterHold
@@ -101,7 +110,7 @@ updatePlayer dt gs =
               , playerJumpDir  = launchDir
               , playerSlide    = Nothing
               , jumpsLeft      = jumpsAvailable - 1
-              , stompJumpTimeLeft = if stompBoostTimeLeft > 0 then 0 else stompBoostTimeLeft
+              , stompJumpTimeLeft = min stompBoostTimeLeft 0
               }
             }
         else gs { player = playerAfterHold { jumpsLeft = jumpsAvailable } }

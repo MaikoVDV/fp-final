@@ -22,6 +22,10 @@ main = do
         { menuPlayerAnim = playerAnim
         , menuDebugMode = debugEnabled
         , menuScreenSize = screenSize
+        , menuFocus = 0
+        , menuPage = MainMenu
+        , menuCustomFiles = []
+        , menuInput = ""
         }
       initialState = Menu menuState
 

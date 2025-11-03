@@ -66,6 +66,7 @@ defaultPlayer = Player
   , lastMoveDir       = 0
   , jumpsLeft         = maxJumps
   , stompJumpTimeLeft = 0
+  , playerAnimClock   = 0
   }
 
 -- Helper function for changing player's health
