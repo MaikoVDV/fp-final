@@ -140,7 +140,55 @@ viewBuilder bs@BuilderState { builderWorld, builderTileMap, builderTileZoom, bui
   let tilePixels = baseTilePixelSizeForScreen builderScreenSize * builderTileZoom * scaleFactor
       worldPic   = renderBuilderWorld tilePixels builderWorld builderTileMap builderDebugMode
       previewPic = renderBuilderPreview tilePixels bs
-  in translate camX camY (Pictures [worldPic, previewPic])
+      palettePic = renderBuilderPalette bs
+  in Pictures [ translate camX camY (Pictures [worldPic, previewPic])
+              , palettePic
+              ]
+
+-- Right-side palette UI to select builder brush
+renderBuilderPalette :: BuilderState -> Picture
+renderBuilderPalette BuilderState { builderScreenSize = (screenW, screenH), builderTileMap = tileMap, builderBrush } =
+  let sw = fromIntegral screenW :: Float
+      sh = fromIntegral screenH :: Float
+      panelW = sw / 6
+      leftX  =  sw/2 - panelW
+      rightX =  sw/2
+      topY   =  sh/2
+      bottomY = -sh/2
+      -- panel background
+      panelRect = polygon [(leftX,bottomY),(rightX,bottomY),(rightX,topY),(leftX,topY)]
+      panelBg   = color (makeColor 0.9 0.9 0.9 0.5) panelRect
+      tiles = paletteTiles
+      n = length tiles
+      slotH = sh / fromIntegral (max 1 n)
+      iconSize = min (panelW * 0.7) (slotH * 0.7)
+      scaleIcon = let s = iconSize / assetTilePixelSize in scale s s
+      getTileSprite m t = Map.findWithDefault blank t m
+      -- draw one tile entry at index i
+      drawItem (i, t) =
+        let cy   = topY - (fromIntegral i + 0.5) * slotH
+            cx   = leftX + panelW/2
+            pic  = scaleIcon (getTileSprite tileMap t)
+            sel  = if t == builderBrush
+                   then let half = iconSize/2 + 6
+                            rect = lineLoop [(-half,-half),(half,-half),(half,half),(-half,half)]
+                        in color black rect
+                   else blank
+        in translate cx cy (Pictures [sel, pic])
+  in Pictures (panelBg : map drawItem (zip [0..] tiles))
+
+-- Keep the palette order in sync with Input
+paletteTiles :: [Tile]
+paletteTiles =
+  [ Grass
+  , Earth
+  , Crate
+  , MetalBox
+  , QuestionBlockFull
+  , QuestionBlockEmpty
+  , Flag
+  , Spikes
+  ]
 
 renderBuilderPreview :: Float -> BuilderState -> Picture
 renderBuilderPreview tilePixels BuilderState { builderWorld = world, builderTileMap = tileMap, builderLastMouse = (mx, my), builderCam = (camX, camY), builderBrush } =

@@ -290,11 +290,17 @@ resolveInterEnemyOverlaps gs@GameState { entities = es } =
     moveBy (dx, dy) e = case e of
       EGoomba eid g ->
         let newPos = addVecToPoint (goombaPos g) (dx, dy)
-            newDir = if dx > 0 then Types.Right else if dx < 0 then Types.Left else goombaDir g
+            newDir
+              | dx > 0 = Types.Right
+              | dx < 0 = Types.Left
+              | otherwise = goombaDir g
         in EGoomba eid g { goombaPos = newPos, goombaDir = newDir }
       EKoopa  eid k ->
         let newPos = addVecToPoint (koopaPos k) (dx, dy)
-            newDir = if dx > 0 then Types.Right else if dx < 0 then Types.Left else koopaDir k
+            newDir
+              | dx > 0 = Types.Right
+              | dx < 0 = Types.Left
+              | otherwise = koopaDir k
         in EKoopa  eid k { koopaPos  = newPos, koopaDir = newDir }
       _             -> e
 

@@ -351,10 +351,12 @@ handlePlayingInput _ gs = gs
 
 -- Level Builder input: place current brush (Grass) on left-click on non-negative tile indices
 handleBuildingInput :: Event -> BuilderState -> BuilderState
--- Place grass with left click
-handleBuildingInput (EventKey (MouseButton LeftButton) Down _ mousePos@(mx, my)) bs =
-  let bs' = bs { builderLMBHeld = True }
-  in paintAtMouse mx my bs'
+-- Left click: if inside palette, select brush; otherwise start painting
+handleBuildingInput (EventKey (MouseButton LeftButton) Down _ (mx, my)) bs@BuilderState { builderScreenSize } =
+  case paletteHit builderScreenSize (mx, my) of
+    Just tile -> bs { builderBrush = tile, builderLMBHeld = False, builderLastPaint = Nothing }
+    Nothing   -> let bs' = bs { builderLMBHeld = True }
+                 in paintAtMouse mx my bs'
 handleBuildingInput (EventKey (MouseButton LeftButton) Up _ _) bs = bs { builderLMBHeld = False, builderLastPaint = Nothing }
 -- Start/stop panning with right mouse button
 handleBuildingInput (EventKey (MouseButton RightButton) Down _ mousePos) bs = bs { builderPanning = True, builderLastMouse = mousePos }
@@ -376,7 +378,7 @@ adjustBuilderZoom delta bs@BuilderState { builderTileZoom } =
 
 -- Helper: paint current brush at mouse position if it corresponds to a new valid tile
 paintAtMouse :: Float -> Float -> BuilderState -> BuilderState
-paintAtMouse mx my bs@BuilderState { builderWorld = w, builderScreenSize, builderTileZoom, builderCam = (camX, camY), builderLastPaint } =
+paintAtMouse mx my bs@BuilderState { builderWorld = w, builderScreenSize, builderTileZoom, builderCam = (camX, camY), builderLastPaint, builderBrush } =
   let tilePixels = baseTilePixelSizeForScreen builderScreenSize * builderTileZoom * scaleFactor
       wx = (mx - camX) / tilePixels
       wy = (my - camY) / tilePixels
@@ -385,8 +387,39 @@ paintAtMouse mx my bs@BuilderState { builderWorld = w, builderScreenSize, builde
       inBounds = row >= 0 && col >= 0 && row < length (grid w) && col < length (head (grid w))
       sameAsLast = builderLastPaint == Just (col, row)
   in if inBounds && not sameAsLast
-        then bs { builderWorld = setTile w (col, row) Grass, builderLastPaint = Just (col, row) }
+        then bs { builderWorld = setTile w (col, row) builderBrush, builderLastPaint = Just (col, row) }
         else bs
+
+-- Palette hit test: returns selected Tile if mouse is inside the right-side palette
+paletteHit :: (Int, Int) -> (Float, Float) -> Maybe Tile
+paletteHit (screenW, screenH) (mx, my) =
+  let sw = fromIntegral screenW :: Float
+      sh = fromIntegral screenH :: Float
+      panelW = sw / 6
+      leftX  =  sw/2 - panelW
+      rightX =  sw/2
+      topY   =  sh/2
+      bottomY = -sh/2
+      insidePanel = mx >= leftX && mx <= rightX && my >= bottomY && my <= topY
+      tiles = paletteTiles
+      n = length tiles
+      slotH = sh / fromIntegral (max 1 n)
+      idx | slotH <= 0 = -1
+          | otherwise  = floor ((topY - my) / slotH)
+  in if insidePanel && idx >= 0 && idx < n then Just (tiles !! idx) else Nothing
+
+-- Palette tiles in desired order (excluding Air)
+paletteTiles :: [Tile]
+paletteTiles =
+  [ Grass
+  , Earth
+  , Crate
+  , MetalBox
+  , QuestionBlockFull
+  , QuestionBlockEmpty
+  , Flag
+  , Spikes
+  ]
 
 
 computeJumpHold :: Float -> GameState -> Player -> (Vector, Float)
