@@ -116,10 +116,31 @@ renderMenu MenuState { menuDebugMode, menuScreenSize, menuFocus, menuPage, menuC
             btnW = 600 :: Float
             btnH = 70  :: Float
             yOf i = 160 - fromIntegral i * 80 :: Float
-            headerBtn = buttonPic btnW btnH "New Level" (menuFocus == 0) (yOf 0)
+            -- Decode focus to (row, col)
+            focusRow = menuFocus `div` 2
+            focusCol = menuFocus `mod` 2
+            headerBtn = buttonPic btnW btnH "New Level" (focusRow == 0) (yOf 0)
             filesPic = case menuCustomFiles of
               [] -> [translate (-250) (yOf 1) $ color white $ scale 0.18 0.18 $ text "No levels found in ./levels"]
-              fs -> [ buttonPic btnW btnH f (menuFocus == ix+1) (yOf (ix+1)) | (ix, f) <- zip [0..] fs ]
+              fs ->
+                let delW = 160 :: Float
+                    delH = btnH
+                    delX = btnW/2 + 40 + delW/2  -- right of the file button
+                    delLabelScale = (delH * 0.45) / 100.0
+                    delRect = polygon [(-delW/2, -delH/2), (delW/2, -delH/2), (delW/2, delH/2), (-delW/2, delH/2)]
+                    delBorder = lineLoop [(-delW/2, -delH/2), (delW/2, -delH/2), (delW/2, delH/2), (-delW/2, delH/2)]
+                    delPic focused y =
+                      let bg = if focused then makeColor 1 0.6 0.6 0.5 else makeColor 1 0 0 0.25
+                          br = if focused then makeColor 1 0.3 0.3 1 else makeColor 1 0 0 1
+                      in translate delX y $ Pictures [ color bg delRect
+                                                      , color br delBorder
+                                                      , translate (-30) (-12) $ color white $ scale delLabelScale delLabelScale $ text "Delete"
+                                                      ]
+                in [ Pictures [ buttonPic btnW btnH f (focusRow == ix+1 && focusCol == 0) (yOf (ix+1))
+                              , delPic (focusRow == ix+1 && focusCol == 1) (yOf (ix+1))
+                              ]
+                   | (ix, f) <- zip [0..] fs
+                   ]
         in Pictures ([titlePic, headerBtn] ++ filesPic ++ [debugPic])
 
       BuilderName ->
@@ -136,18 +157,20 @@ renderMenu MenuState { menuDebugMode, menuScreenSize, menuFocus, menuPage, menuC
 
 -- Builder view
 viewBuilder :: BuilderState -> Picture
-viewBuilder bs@BuilderState { builderWorld, builderTileMap, builderTileZoom, builderScreenSize, builderDebugMode, builderCam = (camX, camY) } =
+viewBuilder bs@BuilderState { builderWorld, builderTileMap, builderTileZoom, builderScreenSize, builderDebugMode, builderCam = (camX, camY), builderConfirmLeave } =
   let tilePixels = baseTilePixelSizeForScreen builderScreenSize * builderTileZoom * scaleFactor
       worldPic   = renderBuilderWorld tilePixels builderWorld builderTileMap builderDebugMode
       previewPic = renderBuilderPreview tilePixels bs
       palettePic = renderBuilderPalette bs
+      confirmPic = if builderConfirmLeave then renderLeaveConfirm builderScreenSize else blank
   in Pictures [ translate camX camY (Pictures [worldPic, previewPic])
               , palettePic
+              , confirmPic
               ]
 
 -- Right-side palette UI to select builder brush
 renderBuilderPalette :: BuilderState -> Picture
-renderBuilderPalette BuilderState { builderScreenSize = (screenW, screenH), builderTileMap = tileMap, builderBrush } =
+renderBuilderPalette BuilderState { builderScreenSize = (screenW, screenH), builderTileMap = tileMap, builderBrush, builderBrushMode } =
   let sw = fromIntegral screenW :: Float
       sh = fromIntegral screenH :: Float
       panelW = sw / 6
@@ -158,56 +181,131 @@ renderBuilderPalette BuilderState { builderScreenSize = (screenW, screenH), buil
       -- panel background
       panelRect = polygon [(leftX,bottomY),(rightX,bottomY),(rightX,topY),(leftX,topY)]
       panelBg   = color (makeColor 0.9 0.9 0.9 0.5) panelRect
-      tiles = paletteTiles
-      n = length tiles
-      slotH = sh / fromIntegral (max 1 n)
-      iconSize = min (panelW * 0.7) (slotH * 0.7)
-      scaleIcon = let s = iconSize / assetTilePixelSize in scale s s
+      items = paletteItems
+      n = length items
+      cols = 2 :: Int
+      rows = (n + cols - 1) `div` cols
+      cellW = panelW / fromIntegral cols
+      slotH = sh / fromIntegral (max 1 rows)
+      iconSize = min (cellW * 0.8) (slotH * 0.8)
+      scaleTo sz = let s = sz / assetTilePixelSize in scale s s
       getTileSprite m t = Map.findWithDefault blank t m
-      -- draw one tile entry at index i
-      drawItem (i, t) =
-        let cy   = topY - (fromIntegral i + 0.5) * slotH
-            cx   = leftX + panelW/2
-            pic  = scaleIcon (getTileSprite tileMap t)
-            sel  = if t == builderBrush
-                   then let half = iconSize/2 + 6
-                            rect = lineLoop [(-half,-half),(half,-half),(half,half),(-half,half)]
-                        in color black rect
-                   else blank
-        in translate cx cy (Pictures [sel, pic])
-  in Pictures (panelBg : map drawItem (zip [0..] tiles))
+      -- grid position (row, col) to center coords
+      cellCenter r c = let cx = leftX + (fromIntegral c + 0.5) * cellW
+                           cy = topY  - (fromIntegral r + 0.5) * slotH
+                       in (cx, cy)
+      isSelected item = case item of
+        PTile t      -> builderBrushMode == BrushNormal && t == builderBrush
+        PSpecial sb  -> case sb of
+                          GrassColumn -> builderBrushMode == BrushGrassColumn
+                          Eraser      -> builderBrushMode == BrushEraser
+      drawItem (i, item) =
+        let c = i `div` rows
+            r = i `mod` rows
+            (cx, cy) = cellCenter r c
+            selRect = if isSelected item then let half = iconSize/2 + 6
+                                              in color black (lineLoop [(-half,-half),(half,-half),(half,half),(-half,half)])
+                       else blank
+            pic = case item of
+              PTile t     -> scaleTo iconSize (getTileSprite tileMap t)
+              PSpecial GrassColumn ->
+                let halfSz = iconSize / 2
+                    grassPic = scaleTo halfSz (getTileSprite tileMap Grass)
+                    earthPic = scaleTo halfSz (getTileSprite tileMap Earth)
+                in Pictures [ translate 0 (halfSz/2) grassPic
+                            , translate 0 (-halfSz/2) earthPic ]
+              PSpecial Eraser ->
+                let half = iconSize / 2 * 0.8
+                    border = color black (lineLoop [(-half,-half),(half,-half),(half,half),(-half,half)])
+                    diag   = color (makeColor 1 0 0 0.9) (line [(-half,-half),(half,half)])
+                in Pictures [border, diag]
+        in translate cx cy (Pictures [selRect, pic])
+  in Pictures (panelBg : map drawItem (zip [0..] items))
 
 -- Keep the palette order in sync with Input
-paletteTiles :: [Tile]
-paletteTiles =
-  [ Grass
-  , Earth
-  , Crate
-  , MetalBox
-  , QuestionBlockFull
-  , QuestionBlockEmpty
-  , Flag
-  , Spikes
+data SpecialBrush = GrassColumn | Eraser
+
+data PaletteItem = PTile Tile | PSpecial SpecialBrush
+
+paletteItems :: [PaletteItem]
+paletteItems =
+  [ PSpecial GrassColumn
+  , PSpecial Eraser
+  , PTile Grass
+  , PTile Earth
+  , PTile Crate
+  , PTile MetalBox
+  , PTile QuestionBlockFull
+  , PTile QuestionBlockEmpty
+  , PTile Flag
+  , PTile Spikes
   ]
 
+-- Leave confirmation popup overlay
+renderLeaveConfirm :: (Int, Int) -> Picture
+renderLeaveConfirm (screenW, screenH) =
+  let sw = fromIntegral screenW :: Float
+      sh = fromIntegral screenH :: Float
+      -- darken background
+      bg = color (makeColor 0 0 0 0.5) $ polygon [(-sw/2,-sh/2),(sw/2,-sh/2),(sw/2,sh/2),(-sw/2,sh/2)]
+      panelW = sw * 0.6
+      panelH = sh * 0.3
+      panelRect = color (makeColor 1 1 1 0.9) $ polygon [(-panelW/2,-panelH/2),(panelW/2,-panelH/2),(panelW/2,panelH/2),(-panelW/2,panelH/2)]
+      panelBorder = color black $ lineLoop [(-panelW/2,-panelH/2),(panelW/2,-panelH/2),(panelW/2,panelH/2),(-panelW/2,panelH/2)]
+      -- text
+      msg = "Are you sure you want to leave?\nUnsaved changes will be lost."
+      textScale = (panelH * 0.12) / 100
+      msgPic = color black $ scale textScale textScale $ translate (-panelW*0.28) (panelH*0.1) $ text msg
+      -- buttons
+      btnW = 220; btnH = 80
+      btnY = - panelH * 0.15
+      yesX = - panelW * 0.2
+      noX  =   panelW * 0.2
+      button label cx cy =
+        let rect = polygon [(-btnW/2,-btnH/2),(btnW/2,-btnH/2),(btnW/2,btnH/2),(-btnW/2,btnH/2)]
+            border = lineLoop [(-btnW/2,-btnH/2),(btnW/2,-btnH/2),(btnW/2,btnH/2),(-btnW/2,btnH/2)]
+            s = (btnH * 0.45) / 100
+            lbl = translate (- (fromIntegral (length label) * 7) * s) (-12) $ scale s s $ text label
+        in translate cx cy $ Pictures [ color (makeColor 1 1 1 0.85) rect, color black border, color black lbl ]
+      yesBtn = button "Yes" yesX btnY
+      noBtn  = button "No"  noX  btnY
+  in Pictures [bg, panelRect, panelBorder, msgPic, yesBtn, noBtn]
+
 renderBuilderPreview :: Float -> BuilderState -> Picture
-renderBuilderPreview tilePixels BuilderState { builderWorld = world, builderTileMap = tileMap, builderLastMouse = (mx, my), builderCam = (camX, camY), builderBrush } =
-  let wx = (mx - camX) / tilePixels
-      wy = (my - camY) / tilePixels
-      x  = floor wx
-      y  = floor ((-wy))
-      rows = grid world
-      inBounds = y >= 0 && x >= 0 && y < length rows && x < length (head rows)
-      getTileSprite m t = Map.findWithDefault blank t m
-  in if not inBounds
-        then blank
-        else
-          let t' = renderedTileFor rows x y builderBrush
-              xWorld = fromIntegral x + 0.5
-              yWorld = negate (fromIntegral y) - 0.5
-              sprite = withTileScale tilePixels (getTileSprite tileMap t')
-          in translate (xWorld * tilePixels) (yWorld * tilePixels)
-               (color (makeColor 1 1 1 0.5) sprite)
+renderBuilderPreview tilePixels BuilderState { builderWorld = world
+                                             , builderTileMap = tileMap
+                                             , builderLastMouse = (mx, my)
+                                             , builderCam = (camX, camY)
+                                             , builderBrush
+                                             , builderBrushMode
+                                             , builderScreenSize = (screenW, screenH)
+                                             } =
+  let -- Hide preview when hovering over the right-side palette panel
+      sw = fromIntegral screenW :: Float
+      sh = fromIntegral screenH :: Float
+      panelW = sw / 6
+      leftX  =  sw/2 - panelW
+      rightX =  sw/2
+      topY   =  sh/2
+      bottomY = -sh/2
+      hoveringPalette = mx >= leftX && mx <= rightX && my >= bottomY && my <= topY
+  in if hoveringPalette || builderBrushMode == BrushEraser then blank else
+    let wx = (mx - camX) / tilePixels
+        wy = (my - camY) / tilePixels
+        x  = floor wx
+        y  = floor ((-wy))
+        rows = grid world
+        inBounds = y >= 0 && x >= 0 && y < length rows && x < length (head rows)
+        getTileSprite m t = Map.findWithDefault blank t m
+    in if not inBounds
+          then blank
+          else
+            let t' = renderedTileFor rows x y builderBrush
+                xWorld = fromIntegral x + 0.5
+                yWorld = negate (fromIntegral y) - 0.5
+                sprite = withTileScale tilePixels (getTileSprite tileMap t')
+            in translate (xWorld * tilePixels) (yWorld * tilePixels)
+                 (color (makeColor 1 1 1 0.5) sprite)
 
 renderBuilderWorld :: Float -> World -> TileMap -> Bool -> Picture
 renderBuilderWorld tilePixels world tileMap debugMode =

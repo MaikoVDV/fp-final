@@ -31,14 +31,19 @@ tileId MetalBox           = 3
 tileId QuestionBlockFull  = 4
 tileId QuestionBlockEmpty = 5
 tileId Earth              = 6
+tileId Flag               = 7
+tileId Spikes             = 8
 
 tileFromId :: Word8 -> Maybe Tile
 tileFromId 0 = Just Air
 tileFromId 1 = Just Grass
 tileFromId 2 = Just Crate
-tileFromId 3 = Just QuestionBlockFull
-tileFromId 4 = Just QuestionBlockEmpty
+tileFromId 3 = Just MetalBox
+tileFromId 4 = Just QuestionBlockFull
+tileFromId 5 = Just QuestionBlockEmpty
 tileFromId 6 = Just Earth
+tileFromId 7 = Just Flag
+tileFromId 8 = Just Spikes
 tileFromId _ = Nothing
 
 -- Fixed-point for positions: store tile units * 256 in Int16
@@ -159,10 +164,17 @@ loadLevel path debugEnabled tileMap screenDims = do
         , pendingJump = False
         , jumpHeld = False
         , sprintHeld = False
-        -- GameState heeft ook een menuState, zodat we vanuit de game terug naar t menu kunnen gaan (nog bij bijv. doodgaan)
-        -- weet alleen niet helemaal hoe dat opgeslagen moet worden met de codec
-        --, menuState = ???
-        --, nextState = ???
+        -- Provide a minimal menu state so returning to the menu works after finishing
+        , menuState = Types.MenuState
+            { menuPlayerAnim = playerAnimation
+            , menuDebugMode = debugEnabled
+            , menuScreenSize = screenDims
+            , menuFocus = 0
+            , menuPage = Types.MainMenu
+            , menuCustomFiles = []
+            , menuInput = ""
+            }
+        , nextState = Types.NMenu
         }
 
 -- Parser for the level format

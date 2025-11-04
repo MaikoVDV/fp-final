@@ -258,7 +258,7 @@ resolveInterEnemyOverlaps gs@GameState { entities = es } =
     resolveAll = (!! 2) . iterate resolvePass
 
     resolvePass :: [Entity] -> [Entity]
-    resolvePass ents = separatePairs 0 ents
+    resolvePass = separatePairs 0
 
     separatePairs :: Int -> [Entity] -> [Entity]
     separatePairs i ents

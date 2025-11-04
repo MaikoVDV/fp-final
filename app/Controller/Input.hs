@@ -2,8 +2,9 @@ module Controller.Input where
 
 import Graphics.Gloss.Interface.IO.Game
 import System.Exit (exitSuccess)
-import System.Directory (createDirectoryIfMissing, listDirectory, doesDirectoryExist)
+import System.Directory (createDirectoryIfMissing, listDirectory, doesDirectoryExist, removeFile)
 import Control.Monad (when)
+import Control.Exception (catch, SomeException)
 
 import Model.Types
 import LevelCodec
@@ -22,6 +23,7 @@ input e appState =
     Menu menuState    -> handleMenuInput e menuState
     Playing gameState -> return . Playing $ handlePlayingInput e gameState
     Building bs       -> case e of
+      -- Save current level
       EventKey (Char 's') Down _ _ -> do
         let outPath = case builderFilePath bs of
               Just p  -> p
@@ -29,8 +31,29 @@ input e appState =
         createDirectoryIfMissing True "levels"
         saveBuilderLevel outPath bs
         putStrLn ("Saved level to " ++ outPath)
-        return (Building bs)
-      _ -> return . Building $ handleBuildingInput e bs
+        return (Building (bs { builderDirty = False }))
+      -- Escape: if dirty prompt, otherwise leave to menu
+      EventKey (SpecialKey KeyEsc) Down _ _ ->
+        if builderConfirmLeave bs
+          then return (Building (bs { builderConfirmLeave = False }))
+          else if builderDirty bs
+            then return (Building (bs { builderConfirmLeave = True }))
+            else leaveToMenuFromBuilder bs
+      -- Popup keyboard shortcuts
+      EventKey (Char 'y') Down _ _ | builderConfirmLeave bs -> leaveToMenuFromBuilder bs
+      EventKey (Char 'Y') Down _ _ | builderConfirmLeave bs -> leaveToMenuFromBuilder bs
+      EventKey (Char 'n') Down _ _ | builderConfirmLeave bs -> return (Building (bs { builderConfirmLeave = False }))
+      EventKey (Char 'N') Down _ _ | builderConfirmLeave bs -> return (Building (bs { builderConfirmLeave = False }))
+      -- Popup mouse click on Yes/No
+      EventKey (MouseButton LeftButton) Down _ (mx, my) | builderConfirmLeave bs ->
+        case leaveConfirmHit (builderScreenSize bs) (mx, my) of
+          Just True  -> leaveToMenuFromBuilder bs
+          Just False -> return (Building (bs { builderConfirmLeave = False }))
+          Nothing    -> return (Building bs)
+      -- Otherwise, normal builder input unless popup visible
+      _ -> if builderConfirmLeave bs
+              then return (Building bs)
+              else return . Building $ handleBuildingInput e bs
 
 -- Helper: convert BuilderState to a minimal GameState and save via LevelCodec
 saveBuilderLevel :: FilePath -> BuilderState -> IO ()
@@ -128,39 +151,63 @@ handleMenuInput e ms@MenuState { menuFocus, menuPage } = case menuPage of
     _ -> return (Menu ms)
 
   BuilderSelect -> case e of
-    -- Navigate (0 = New Level, 1.. = files)
-    EventKey (Char 'w') Down _ _ -> return . Menu $ ms { menuFocus = max 0 (menuFocus - 1) }
-    EventKey (Char 'W') Down _ _ -> return . Menu $ ms { menuFocus = max 0 (menuFocus - 1) }
-    EventKey (Char 's') Down _ _ ->
-      let lastIdx = length (menuCustomFiles ms)  -- includes 0 for New Level
-      in return . Menu $ ms { menuFocus = min lastIdx (menuFocus + 1) }
-    EventKey (Char 'S') Down _ _ ->
-      let lastIdx = length (menuCustomFiles ms)
-      in return . Menu $ ms { menuFocus = min lastIdx (menuFocus + 1) }
+    -- Navigate grid with WASD
+    EventKey (Char 'w') Down _ _ -> return . Menu $ ms { menuFocus = moveFocusBuilderSelect ms menuFocus 'w' }
+    EventKey (Char 'W') Down _ _ -> return . Menu $ ms { menuFocus = moveFocusBuilderSelect ms menuFocus 'w' }
+    EventKey (Char 's') Down _ _ -> return . Menu $ ms { menuFocus = moveFocusBuilderSelect ms menuFocus 's' }
+    EventKey (Char 'S') Down _ _ -> return . Menu $ ms { menuFocus = moveFocusBuilderSelect ms menuFocus 's' }
+    EventKey (Char 'a') Down _ _ -> return . Menu $ ms { menuFocus = moveFocusBuilderSelect ms menuFocus 'a' }
+    EventKey (Char 'A') Down _ _ -> return . Menu $ ms { menuFocus = moveFocusBuilderSelect ms menuFocus 'a' }
+    EventKey (Char 'd') Down _ _ -> return . Menu $ ms { menuFocus = moveFocusBuilderSelect ms menuFocus 'd' }
+    EventKey (Char 'D') Down _ _ -> return . Menu $ ms { menuFocus = moveFocusBuilderSelect ms menuFocus 'd' }
 
     -- Activate
     EventKey (SpecialKey KeyEnter) Down _ _ ->
-      if menuFocus == 0 then goBuilderName ms else do
-        case drop (menuFocus - 1) (menuCustomFiles ms) of
-          (f:_) -> startBuilderFromLevel ms ("levels/" ++ f)
-          _     -> return (Menu ms)
+      case focusToRC menuFocus of
+        (0, 0) -> goBuilderName ms
+        (r, 0) | r >= 1 -> case drop (r - 1) (menuCustomFiles ms) of
+                              (f:_) -> startBuilderFromLevel ms ("levels/" ++ f)
+                              _     -> return (Menu ms)
+        (r, 1) | r >= 1 -> do
+          let files = menuCustomFiles ms
+          case drop (r - 1) files of
+            (f:_) -> do
+              let path = "levels/" ++ f
+                  handler :: SomeException -> IO ()
+                  handler _ = return ()
+              catch (removeFile path) handler
+              refreshBuilderSelect ms
+            _ -> return (Menu ms)
+        _ -> return (Menu ms)
 
     -- Back
     EventKey (SpecialKey KeyEsc) Down _ _ -> return . Menu $ ms { menuPage = MainMenu, menuFocus = 1 }
 
     -- Mouse hover
     EventMotion (mx, my) ->
-      case buttonFromMouseBuilderSelect ms (mx, my) of
+      case focusFromMouseBuilderSelect ms (mx, my) of
         Just f  -> return . Menu $ ms { menuFocus = f }
         Nothing -> return (Menu ms)
 
     -- Mouse click
-    EventKey (MouseButton LeftButton) Down _ (mx, my) ->
-      case buttonFromMouseBuilderSelect ms (mx, my) of
-        Just 0 -> goBuilderName ms
-        Just idx -> case drop (idx - 1) (menuCustomFiles ms) of
-          (f:_) -> startBuilderFromLevel ms ("levels/" ++ f)
-          _     -> return (Menu ms)
+    EventKey (MouseButton LeftButton) Down _ (mx, my) -> do
+      case focusFromMouseBuilderSelect ms (mx, my) of
+        Just f -> case focusToRC f of
+          (0, 0) -> goBuilderName ms
+          (r, 0) | r >= 1 -> case drop (r - 1) (menuCustomFiles ms) of
+                                (ff:_) -> startBuilderFromLevel ms ("levels/" ++ ff)
+                                _      -> return (Menu ms)
+          (r, 1) | r >= 1 -> do
+            let files = menuCustomFiles ms
+            case drop (r - 1) files of
+              (ff:_) -> do
+                let path = "levels/" ++ ff
+                    handler :: SomeException -> IO ()
+                    handler _ = return ()
+                catch (removeFile path) handler
+                refreshBuilderSelect ms
+              _ -> return (Menu ms)
+          _ -> return (Menu ms)
         Nothing -> return (Menu ms)
 
     _ -> return (Menu ms)
@@ -202,20 +249,60 @@ buttonFromMouseMain (mx, my)
                in dx <= btnW/2 && dy <= btnH/2
 
 -- Builder select mouse focus: 0 = New Level, 1.. = files
-buttonFromMouseBuilderSelect :: MenuState -> (Float, Float) -> Maybe Int
-buttonFromMouseBuilderSelect MenuState { menuCustomFiles } (mx, my) = go 0 (Nothing : map Just [0 .. length menuCustomFiles - 1])
-  where
-    btnW = 600 :: Float
-    btnH = 70  :: Float
-    yOf i = 160 - fromIntegral i * 80 :: Float
-    inside i = let cx = 0; cy = yOf i
-                   dx = abs (mx - cx)
-                   dy = abs (my - cy)
-               in dx <= btnW/2 && dy <= btnH/2
-    go _ [] = Nothing
-    go i (_:xs)
-      | inside i = Just i
-      | otherwise = go (i+1) xs
+-- Convert a focus Int to (row, col)
+focusToRC :: Int -> (Int, Int)
+focusToRC f = (f `div` 2, f `mod` 2)
+
+-- Normalize focus for BuilderSelect page so it targets an existing button
+normalizeFocusBuilderSelect :: MenuState -> Int -> Int
+normalizeFocusBuilderSelect MenuState { menuCustomFiles } f =
+  let rows = 1 + length menuCustomFiles
+      (r0, c0) = focusToRC f
+      r = max 0 (min (rows - 1) r0)
+      maxC = if r == 0 then 0 else 1
+      c = max 0 (min maxC c0)
+  in r * 2 + c
+
+-- Move focus per WASD within the grid
+moveFocusBuilderSelect :: MenuState -> Int -> Char -> Int
+moveFocusBuilderSelect ms f dir =
+  let (r, c) = focusToRC (normalizeFocusBuilderSelect ms f)
+      rows = 1 + length (menuCustomFiles ms)
+      up    = max 0 (r - 1)
+      down  = min (rows - 1) (r + 1)
+      leftC = if r == 0 then 0 else max 0 (c - 1)
+      rightC= if r == 0 then 0 else min 1 (c + 1)
+  in normalizeFocusBuilderSelect ms $ case dir of
+      'w' -> up * 2 + min c (if up == 0 then 0 else 1)
+      's' -> down * 2 + min c (if down == 0 then 0 else 1)
+      'a' -> r * 2 + leftC
+      'd' -> r * 2 + rightC
+      _   -> r * 2 + c
+
+-- Mouse to focus mapping for BuilderSelect (includes New Level and Delete buttons)
+focusFromMouseBuilderSelect :: MenuState -> (Float, Float) -> Maybe Int
+focusFromMouseBuilderSelect MenuState { menuCustomFiles } (mx, my) =
+  let btnW = 600 :: Float
+      btnH = 70  :: Float
+      delW = 160 :: Float
+      delH = btnH
+      delX = btnW/2 + 40 + delW/2
+      yOf i = 160 - fromIntegral i * 80 :: Float
+      insideRect cx cy w h = let dx = abs (mx - cx); dy = abs (my - cy) in dx <= w/2 && dy <= h/2
+      -- check New Level first (row 0, col 0)
+      checkRow0 = if insideRect 0 (yOf 0) btnW btnH then Just 0 else Nothing
+      -- check file rows
+      checkRow i [] = Nothing
+      checkRow i (_:xs) =
+        let y = yOf i
+            leftHit  = insideRect 0   y btnW btnH
+            rightHit = insideRect delX y delW delH
+        in if leftHit then Just (i*2)
+           else if rightHit then Just (i*2 + 1)
+           else checkRow (i+1) xs
+  in case checkRow0 of
+      Just f -> Just f
+      Nothing -> checkRow 1 menuCustomFiles
 
 -- Custom levels list mouse focus
 buttonFromMouseCustom :: MenuState -> (Float, Float) -> Maybe Int
@@ -249,7 +336,18 @@ goBuilderSelect ms = do
   files <- if not exists then return [] else listDirectory "levels"
   let endsWith ext s = let le = length ext; ls = length s in ls >= le && drop (ls - le) s == ext
       lvls = [ f | f <- files, endsWith ".lvl" f ]
-  return . Menu $ ms { menuPage = BuilderSelect, menuFocus = 0, menuCustomFiles = lvls }
+      f0 = 0 -- row 0, col 0
+  return . Menu $ ms { menuPage = BuilderSelect, menuFocus = f0, menuCustomFiles = lvls }
+
+-- Refresh file list in BuilderSelect after a deletion
+refreshBuilderSelect :: MenuState -> IO AppState
+refreshBuilderSelect ms = do
+  exists <- doesDirectoryExist "levels"
+  files <- if not exists then return [] else listDirectory "levels"
+  let endsWith ext s = let le = length ext; ls = length s in ls >= le && drop (ls - le) s == ext
+      lvls = [ f | f <- files, endsWith ".lvl" f ]
+      newFocus = normalizeFocusBuilderSelect (ms { menuCustomFiles = lvls }) (menuFocus ms)
+  return . Menu $ ms { menuPage = BuilderSelect, menuFocus = newFocus, menuCustomFiles = lvls }
 
 -- Go to builder name input
 goBuilderName :: MenuState -> IO AppState
@@ -276,6 +374,9 @@ startBuilderFromLevel ms path = do
         , builderScreenSize = menuScreenSize ms
         , builderDebugMode = menuDebugMode ms
         , builderBrush = Grass
+        , builderBrushMode = BrushNormal
+        , builderDirty = False
+        , builderConfirmLeave = False
         , builderCam = (0, 0)
         , builderPanning = False
         , builderLastMouse = (0, 0)
@@ -307,6 +408,9 @@ startBuilder ms@MenuState { menuDebugMode, menuScreenSize } = do
              , builderScreenSize = menuScreenSize
              , builderDebugMode = menuDebugMode
              , builderBrush = Grass
+             , builderBrushMode = BrushNormal
+             , builderDirty = False
+             , builderConfirmLeave = False
              , builderCam = (0, 0)
              , builderPanning = False
              , builderLastMouse = (0, 0)
@@ -354,7 +458,8 @@ handleBuildingInput :: Event -> BuilderState -> BuilderState
 -- Left click: if inside palette, select brush; otherwise start painting
 handleBuildingInput (EventKey (MouseButton LeftButton) Down _ (mx, my)) bs@BuilderState { builderScreenSize } =
   case paletteHit builderScreenSize (mx, my) of
-    Just tile -> bs { builderBrush = tile, builderLMBHeld = False, builderLastPaint = Nothing }
+    Just (SelTile tile) -> bs { builderBrush = tile, builderBrushMode = BrushNormal, builderLMBHeld = False, builderLastPaint = Nothing }
+    Just (SelTool mode) -> bs { builderBrushMode = mode, builderLMBHeld = False, builderLastPaint = Nothing }
     Nothing   -> let bs' = bs { builderLMBHeld = True }
                  in paintAtMouse mx my bs'
 handleBuildingInput (EventKey (MouseButton LeftButton) Up _ _) bs = bs { builderLMBHeld = False, builderLastPaint = Nothing }
@@ -378,20 +483,72 @@ adjustBuilderZoom delta bs@BuilderState { builderTileZoom } =
 
 -- Helper: paint current brush at mouse position if it corresponds to a new valid tile
 paintAtMouse :: Float -> Float -> BuilderState -> BuilderState
-paintAtMouse mx my bs@BuilderState { builderWorld = w, builderScreenSize, builderTileZoom, builderCam = (camX, camY), builderLastPaint, builderBrush } =
+paintAtMouse mx my bs@BuilderState { builderWorld = w, builderScreenSize, builderTileZoom, builderCam = (camX, camY), builderLastPaint, builderBrush, builderBrushMode } =
   let tilePixels = baseTilePixelSizeForScreen builderScreenSize * builderTileZoom * scaleFactor
       wx = (mx - camX) / tilePixels
       wy = (my - camY) / tilePixels
       col = floor wx
       row = floor ((-wy))
-      inBounds = row >= 0 && col >= 0 && row < length (grid w) && col < length (head (grid w))
-      sameAsLast = builderLastPaint == Just (col, row)
-  in if inBounds && not sameAsLast
-        then bs { builderWorld = setTile w (col, row) builderBrush, builderLastPaint = Just (col, row) }
+      inBounds = row >= 0 && col >= 0 && row < length (grid w) && (null (grid w) || col < length (head (grid w)))
+      (wExpanded, (cx, cy)) = if inBounds then (w, (col, row)) else ensureInBounds w (col, row)
+      sameAsLast = builderLastPaint == Just (cx, cy)
+  in if not sameAsLast
+        then case builderBrushMode of
+               BrushNormal -> bs { builderWorld = setTile wExpanded (cx, cy) builderBrush
+                                  , builderLastPaint = Just (cx, cy)
+                                  , builderDirty = True }
+               BrushGrassColumn ->
+                 let w1 = setTile wExpanded (cx, cy) Grass
+                     h = length (grid w1)
+                     fillDown world y0
+                       | y0 >= h = world
+                       | otherwise =
+                           case getTile world (cx, y0) of
+                             Air -> fillDown (setTile world (cx, y0) Earth) (y0+1)
+                             _   -> world
+                     wFilled = fillDown w1 (cy + 1)
+                 in bs { builderWorld = wFilled, builderLastPaint = Just (cx, cy), builderDirty = True }
+               BrushEraser -> bs { builderWorld = setTile wExpanded (cx, cy) Air
+                                   , builderLastPaint = Just (cx, cy)
+                                   , builderDirty = True }
         else bs
 
+-- Hit test for leave confirmation popup buttons: True = Yes, False = No
+leaveConfirmHit :: (Int, Int) -> (Float, Float) -> Maybe Bool
+leaveConfirmHit (screenW, screenH) (mx, my) =
+  let sw = fromIntegral screenW :: Float
+      sh = fromIntegral screenH :: Float
+      panelW = sw * 0.6
+      panelH = sh * 0.3
+      btnW = 220 :: Float
+      btnH = 80  :: Float
+      btnY = - panelH * 0.15
+      yesX = - panelW * 0.2
+      noX  =   panelW * 0.2
+      inside cx cy w h = let dx = abs (mx - cx); dy = abs (my - cy) in dx <= w/2 && dy <= h/2
+  in if inside yesX btnY btnW btnH then Just True
+     else if inside noX btnY btnW btnH then Just False
+     else Nothing
+
+leaveToMenuFromBuilder :: BuilderState -> IO AppState
+leaveToMenuFromBuilder bs = do
+  anim <- loadPlayerAnimation
+  let ms = MenuState
+            { menuPlayerAnim = anim
+            , menuDebugMode = builderDebugMode bs
+            , menuScreenSize = builderScreenSize bs
+            , menuFocus = 0
+            , menuPage = MainMenu
+            , menuCustomFiles = []
+            , menuInput = ""
+            }
+  return (Menu ms)
+
 -- Palette hit test: returns selected Tile if mouse is inside the right-side palette
-paletteHit :: (Int, Int) -> (Float, Float) -> Maybe Tile
+-- Two-column palette with tiles and special tools
+data PaletteSel = SelTile Tile | SelTool BrushMode
+
+paletteHit :: (Int, Int) -> (Float, Float) -> Maybe PaletteSel
 paletteHit (screenW, screenH) (mx, my) =
   let sw = fromIntegral screenW :: Float
       sh = fromIntegral screenH :: Float
@@ -401,24 +558,44 @@ paletteHit (screenW, screenH) (mx, my) =
       topY   =  sh/2
       bottomY = -sh/2
       insidePanel = mx >= leftX && mx <= rightX && my >= bottomY && my <= topY
-      tiles = paletteTiles
-      n = length tiles
-      slotH = sh / fromIntegral (max 1 n)
-      idx | slotH <= 0 = -1
-          | otherwise  = floor ((topY - my) / slotH)
-  in if insidePanel && idx >= 0 && idx < n then Just (tiles !! idx) else Nothing
+      items = paletteItems
+      n = length items
+      cols = 2 :: Int
+      rows = (n + cols - 1) `div` cols
+      cellW = panelW / fromIntegral cols
+      slotH = sh / fromIntegral (max 1 rows)
+      colIdx | mx < leftX + cellW = 0
+             | otherwise          = 1
+      rowIdx | slotH <= 0 = -1
+             | otherwise  = floor ((topY - my) / slotH)
+      idx = colIdx * rows + rowIdx
+  in if insidePanel && rowIdx >= 0 && rowIdx < rows && idx >= 0 && idx < n
+        then case items !! idx of
+               PTile t     -> Just (SelTile t)
+               PSpecial sb -> Just (SelTool (specialToMode sb))
+        else Nothing
 
 -- Palette tiles in desired order (excluding Air)
-paletteTiles :: [Tile]
-paletteTiles =
-  [ Grass
-  , Earth
-  , Crate
-  , MetalBox
-  , QuestionBlockFull
-  , QuestionBlockEmpty
-  , Flag
-  , Spikes
+data SpecialBrush = GrassColumn | Eraser
+
+data PaletteItem = PTile Tile | PSpecial SpecialBrush
+
+specialToMode :: SpecialBrush -> BrushMode
+specialToMode GrassColumn = BrushGrassColumn
+specialToMode Eraser      = BrushEraser
+
+paletteItems :: [PaletteItem]
+paletteItems =
+  [ PSpecial GrassColumn
+  , PSpecial Eraser
+  , PTile Grass
+  , PTile Earth
+  , PTile Crate
+  , PTile MetalBox
+  , PTile QuestionBlockFull
+  , PTile QuestionBlockEmpty
+  , PTile Flag
+  , PTile Spikes
   ]
 
 

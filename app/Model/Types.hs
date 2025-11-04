@@ -82,6 +82,9 @@ data BuilderState = BuilderState
   , builderScreenSize :: (Int, Int)
   , builderDebugMode  :: Bool
   , builderBrush      :: Tile
+  , builderBrushMode  :: BrushMode
+  , builderDirty      :: Bool
+  , builderConfirmLeave :: Bool
   , builderCam        :: (Float, Float)
   , builderPanning    :: Bool
   , builderLastMouse  :: (Float, Float)
@@ -89,6 +92,8 @@ data BuilderState = BuilderState
   , builderLastPaint  :: Maybe (Int, Int)
   , builderFilePath   :: Maybe FilePath
   }
+
+data BrushMode = BrushNormal | BrushGrassColumn | BrushEraser deriving (Eq, Show)
 
 -- Entities
 data Entity
