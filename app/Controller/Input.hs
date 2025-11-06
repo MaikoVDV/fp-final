@@ -426,11 +426,12 @@ startWorldMap ms = do
           return (Menu ms)
         Prelude.Right wm -> do
           let initial = MapState { wmWorldMap = wm
-                                 , wmCursor = NodeId 0
-                                 , wmMenuState = ms
-                                 , wmAlong = Nothing
-                                 , wmSpeed = 240
-                                 }
+                                  , wmCursor = NodeId 0
+                                  , wmMenuState = ms
+                                  , wmAlong = Nothing
+                                  , wmSpeed = 240
+                                  , wmFilePath = worldPath
+                                  }
           return (WorldMapScreen initial)
     else do
       putStrLn ("World file not found: " ++ worldPath)

@@ -192,6 +192,7 @@ data MapState = MapState
   , wmMenuState :: MenuState
   , wmAlong     :: Maybe (EdgeId, [Point], NodeId, Float) -- edge, oriented polyline, destination, t ∈ [0,1]
   , wmSpeed     :: Float -- units per second in map-space
+  , wmFilePath  :: FilePath -- source JSON to persist progress
   }
 
 -- AABB defined by position and size

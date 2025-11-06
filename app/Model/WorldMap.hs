@@ -226,11 +226,13 @@ adjacentDirected wm nid = mapMaybe option (edges wm)
 
 -- Render nodes as filled circles with simple color coding
 renderNode :: MapNode -> Picture
-renderNode MapNode{pos=(x,y), nodeState} =
+renderNode MapNode{pos=(x,y), nodeState, nodeType} =
   let stateCol = case nodeState of
-        Locked    -> makeColorI 0 0 0 255       -- black
-        Unlocked  -> makeColorI 220 50 50 255   -- red
-        Completed -> makeColorI 50 80 220 255   -- blue
+        Locked    -> makeColorI 0 0 0 255                     -- black
+        Completed -> makeColorI 50 80 220 255                 -- blue
+        Unlocked  -> case nodeType of
+                        Hub  -> makeColorI 160 160 160 255    -- grey for hubs
+                        _    -> makeColorI 220 50 50 255      -- red for playable levels
       dot   = color stateCol (circleSolid 12)
       outline = color (makeColorI 255 255 255 180) (G.thickCircle 12 2)
   in translate x y (pictures [dot, outline])

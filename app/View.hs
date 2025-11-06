@@ -13,11 +13,13 @@ import Model.InitialState
 import Model.Config
 
 -- Shared helper: decide which tile to render based on neighbors
--- If placing Grass and there is ground above, render Earth/Earth2 instead
+-- Earth tiles render as a random Earth variant; Grass with ground above also renders as Earth variant
 renderedTileFor :: [[Tile]] -> Int -> Int -> Tile -> Tile
 renderedTileFor rows x y tile =
   case tile of
     Grass | hasGroundAbove x y rows -> earthVariantFor x y
+    Earth                           -> earthVariantFor x y
+    Earth2                          -> earthVariantFor x y
     _                               -> tile
   where
     isGround :: Tile -> Bool

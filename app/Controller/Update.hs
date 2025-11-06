@@ -13,7 +13,8 @@ import Controller.Collision
 import Controller.Movement
 
 import MathUtils
-import Model.WorldMap (polylineLength, Edge(..), WorldMap(..), MapNode(..), EdgeDir(..), NodeState(..))
+import Model.WorldMap (polylineLength, Edge(..), WorldMap(..), MapNode(..), EdgeDir(..), NodeState(..), NodeType(..))
+import Model.WorldMapCodec (saveWorldMapFile)
 
 update :: Float -> AppState -> IO AppState
 update _  menuState@(Menu _) = return menuState
@@ -22,7 +23,10 @@ update dt (Playing gs)
       case nextState gs of
         NPlaying     -> return (Playing gs)
         NFinishLevel -> case currentMapState gs of
-                          Just ms -> return (WorldMapScreen (unlockAfterFinish ms))
+                          Just ms -> do
+                            let ms' = unlockAfterFinish ms
+                            saveWorldMapFile (wmFilePath ms') (wmWorldMap ms')
+                            return (WorldMapScreen ms')
                           Nothing -> return (Menu $ menuState gs)
         _            -> return (Menu $ menuState gs)
   | otherwise =
@@ -30,7 +34,10 @@ update dt (Playing gs)
       in case nextState gs' of
         NPlaying     -> return . Playing $ gs'
         NFinishLevel -> case currentMapState gs' of
-                          Just ms -> return (WorldMapScreen (unlockAfterFinish ms))
+                          Just ms -> do
+                            let ms' = unlockAfterFinish ms
+                            saveWorldMapFile (wmFilePath ms') (wmWorldMap ms')
+                            return (WorldMapScreen ms')
                           Nothing -> return (Menu $ menuState gs')
         _            -> return (Menu $ menuState gs')
 update _ (Building bs)      = return (Building bs)
@@ -52,16 +59,26 @@ updateMap dt ms@MapState { wmAlong = Just (eid, pts, dest, t), wmSpeed } =
 -- Unlock neighbors and mark current node completed
 unlockAfterFinish :: MapState -> MapState
 unlockAfterFinish ms@MapState { wmWorldMap = wm, wmCursor = cur } =
-  let edges' = [ if allowsFrom e cur then e { unlocked = True } else e | e <- edges wm ]
+  let edges1 = [ if allowsFrom e cur then e { unlocked = True } else e | e <- edges wm ]
       neighborIds = [ other e cur | e <- edges wm, allowsFrom e cur ]
+      -- Hubs among immediate neighbors
+      isHubId nid = case filter ((== nid) . nodeId) (nodes wm) of
+                      (n:_) -> case nodeType n of { Hub -> True; _ -> False }
+                      _     -> False
+      hubIds = [ nid | nid <- neighborIds, isHubId nid ]
+      -- Unlock all edges emanating from unlocked hubs as well
+      unlockFromHub e = any (\h -> allowsFrom e h) hubIds
+      edges2 = [ if unlockFromHub e then e { unlocked = True } else e | e <- edges1 ]
+      -- Also unlock nodes reachable from those hubs
+      neighborIdsFromHubs = [ other e h | e <- edges wm, h <- hubIds, allowsFrom e h ]
       nodes' = [ updateNode n | n <- nodes wm ]
       updateNode n
         | nodeId n == cur = n { nodeState = Completed }
-        | nodeId n `elem` neighborIds = case nodeState n of
+        | nodeId n `elem` (neighborIds ++ neighborIdsFromHubs) = case nodeState n of
             Locked -> n { nodeState = Unlocked }
             _      -> n
         | otherwise = n
-      wm' = wm { nodes = nodes', edges = edges' }
+      wm' = wm { nodes = nodes', edges = edges2 }
   in ms { wmWorldMap = wm' }
   where
     allowsFrom e nid = case dir e of
