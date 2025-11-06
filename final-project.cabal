@@ -24,6 +24,7 @@ executable final-project
       Model.Entity
       Model.Collider
       Model.InitialState
+      Model.WorldMap
       View
       Controller.Update
       Controller.Input
@@ -32,11 +33,20 @@ executable final-project
       MathUtils
       Assets
       LevelCodec
+      Model.WorldMapCodec
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
 
-    build-depends:    directory ^>=1.3.8.5, base ^>=4.18.3.0, gloss, containers, bytestring, directory
+    build-depends:    base ^>=4.18.3.0
+                    , gloss
+                    , containers
+                    , bytestring
+                    , directory
+                    , filepath
+                    , aeson
+                    , text
+                    , vector
 
     hs-source-dirs:   app
 

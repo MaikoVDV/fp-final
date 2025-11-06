@@ -1,6 +1,7 @@
 module Model.Types where
 import Graphics.Gloss
 import qualified Data.Map as Map
+import Model.WorldMap (WorldMap, NodeId, EdgeId)
 
 -- GameState
 data GameState = GameState
@@ -20,6 +21,7 @@ data GameState = GameState
   , sprintHeld      :: Bool
   , menuState       :: MenuState
   , nextState       :: NextState
+  , currentMapState :: Maybe MapState -- when level started from world map
   }
 
 data MenuPage = MainMenu | CustomLevels | BuilderSelect | BuilderName deriving (Eq, Show)
@@ -38,6 +40,7 @@ data AppState
   = Menu MenuState
   | Playing GameState
   | Building BuilderState
+  | WorldMapScreen MapState
 
 data NextState
   = NPlaying
@@ -57,6 +60,7 @@ data Tile
   = Air
   | Grass
   | Earth
+  | Earth2
   | Crate
   | MetalBox
   | QuestionBlockFull
@@ -78,6 +82,7 @@ type AnimMap = Map.Map EntityType Animation
 data BuilderState = BuilderState
   { builderWorld      :: World
   , builderTileMap    :: TileMap
+  , builderAnimMap    :: AnimMap
   , builderTileZoom   :: Float
   , builderScreenSize :: (Int, Int)
   , builderDebugMode  :: Bool
@@ -85,6 +90,9 @@ data BuilderState = BuilderState
   , builderBrushMode  :: BrushMode
   , builderDirty      :: Bool
   , builderConfirmLeave :: Bool
+  , builderPaletteTab :: PaletteTab
+  , builderEnemySel   :: EnemySel
+  , builderEntities   :: [Entity]
   , builderCam        :: (Float, Float)
   , builderPanning    :: Bool
   , builderLastMouse  :: (Float, Float)
@@ -94,6 +102,10 @@ data BuilderState = BuilderState
   }
 
 data BrushMode = BrushNormal | BrushGrassColumn | BrushEraser deriving (Eq, Show)
+
+data PaletteTab = TabBlocks | TabEnemies deriving (Eq, Show)
+
+data EnemySel = EnemyGoomba | EnemyEraser deriving (Eq, Show)
 
 -- Entities
 data Entity
@@ -172,6 +184,15 @@ data Powerup = Powerup
 type Animation = [Picture]
 data MoveDir = Left | Right
   deriving (Eq, Show)
+
+-- World map screen state
+data MapState = MapState
+  { wmWorldMap  :: WorldMap
+  , wmCursor    :: NodeId
+  , wmMenuState :: MenuState
+  , wmAlong     :: Maybe (EdgeId, [Point], NodeId, Float) -- edge, oriented polyline, destination, t ∈ [0,1]
+  , wmSpeed     :: Float -- units per second in map-space
+  }
 
 -- AABB defined by position and size
 data Collider = AABB { aPos :: Point, aWidth :: Float, aHeight :: Float, tag :: ColliderTag }

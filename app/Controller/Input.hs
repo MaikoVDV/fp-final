@@ -3,6 +3,8 @@ module Controller.Input where
 import Graphics.Gloss.Interface.IO.Game
 import System.Exit (exitSuccess)
 import System.Directory (createDirectoryIfMissing, listDirectory, doesDirectoryExist, removeFile)
+import System.FilePath (takeDirectory)
+import Data.List (isPrefixOf)
 import Control.Monad (when)
 import Control.Exception (catch, SomeException)
 
@@ -14,7 +16,11 @@ import Model.Config
 import Model.World
 import Assets
 import qualified Data.Map as Map
-import Model.Entity (defaultPlayer)
+import Model.Entity (defaultPlayer, defaultGoomba)
+import Model.WorldMap (exampleWorldMap, NodeId(..), adjacentDirected, Edge(..), nodeById, LevelRef(..), MapNode(..))
+import LevelCodec (loadLevel)
+import Model.WorldMapCodec (loadWorldMapFile)
+import System.Directory (doesFileExist)
 
 input :: Event -> AppState -> IO AppState
 -- Press 's' in build mode to save the current level
@@ -25,12 +31,18 @@ input e appState =
     Building bs       -> case e of
       -- Save current level
       EventKey (Char 's') Down _ _ -> do
-        let outPath = case builderFilePath bs of
-              Just p  -> p
-              Nothing -> "levels/quicksave.lvl"
-        createDirectoryIfMissing True "levels"
-        saveBuilderLevel outPath bs
-        putStrLn ("Saved level to " ++ outPath)
+        let baseQuick = if builderDebugMode bs then "built-in-levels/quicksave.lvl" else "levels/quicksave.lvl"
+            mapToBuiltIn p
+              | "levels/" `isPrefixOf` p = "built-in-levels/" ++ drop 7 p
+              | "built-in-levels/" `isPrefixOf` p = p
+              | otherwise = if builderDebugMode bs then "built-in-levels/" ++ p else p
+            outPath0 = case builderFilePath bs of
+              Just p  -> if builderDebugMode bs then mapToBuiltIn p else p
+              Nothing -> baseQuick
+            dir = takeDirectory outPath0
+        createDirectoryIfMissing True dir
+        saveBuilderLevel outPath0 bs
+        putStrLn ("Saved level to " ++ outPath0)
         return (Building (bs { builderDirty = False }))
       -- Escape: if dirty prompt, otherwise leave to menu
       EventKey (SpecialKey KeyEsc) Down _ _ ->
@@ -54,6 +66,7 @@ input e appState =
       _ -> if builderConfirmLeave bs
               then return (Building bs)
               else return . Building $ handleBuildingInput e bs
+    WorldMapScreen ms -> handleWorldMapInput e ms
 
 -- Helper: convert BuilderState to a minimal GameState and save via LevelCodec
 saveBuilderLevel :: FilePath -> BuilderState -> IO ()
@@ -62,10 +75,10 @@ saveBuilderLevel path bs = do
       gs = GameState
         { world = w
         , player = defaultPlayer
-        , entities = []
+        , entities = builderEntities bs
         , entityIdCounter = 0
         , tileMap = builderTileMap bs
-        , animMap = Map.empty
+        , animMap = builderAnimMap bs
         , tileZoom = builderTileZoom bs
         , screenSize = builderScreenSize bs
         , frameCount = 0
@@ -76,6 +89,7 @@ saveBuilderLevel path bs = do
         , sprintHeld = False
         , menuState = MenuState { menuPlayerAnim = [], menuDebugMode = builderDebugMode bs, menuScreenSize = builderScreenSize bs, menuFocus = 0, menuPage = MainMenu, menuCustomFiles = [], menuInput = "" }
         , nextState = NMenu
+        , currentMapState = Nothing
         }
   saveLevel path gs
 
@@ -93,7 +107,7 @@ handleMenuInput e ms@MenuState { menuFocus, menuPage } = case menuPage of
     -- Activate focused button
     EventKey (SpecialKey KeyEnter) Down _ _ ->
       case menuFocus of
-        0 -> startGame ms
+        0 -> startWorldMap ms
         1 -> goBuilderSelect ms
         2 -> goCustomLevels ms
         _ -> return (Menu ms)
@@ -107,7 +121,7 @@ handleMenuInput e ms@MenuState { menuFocus, menuPage } = case menuPage of
     -- Mouse click activates if inside button
     EventKey (MouseButton LeftButton) Down _ (mx, my) ->
       case buttonFromMouseMain (mx, my) of
-        Just 0 -> startGame ms
+        Just 0 -> startWorldMap ms
         Just 1 -> goBuilderSelect ms
         Just 2 -> goCustomLevels ms
         _      -> return (Menu ms)
@@ -364,12 +378,14 @@ startCustomLevel ms path = do
 startBuilderFromLevel :: MenuState -> FilePath -> IO AppState
 startBuilderFromLevel ms path = do
   tileMap <- loadTileMap
+  animMap <- loadAnimMap
   -- reuse GameState loader to get a world grid, then convert to BuilderState
   gs <- loadLevel path (menuDebugMode ms) tileMap (menuScreenSize ms)
   let w = world gs
       bs = BuilderState
         { builderWorld = w
         , builderTileMap = tileMap
+        , builderAnimMap = animMap
         , builderTileZoom = 1.0
         , builderScreenSize = menuScreenSize ms
         , builderDebugMode = menuDebugMode ms
@@ -377,6 +393,9 @@ startBuilderFromLevel ms path = do
         , builderBrushMode = BrushNormal
         , builderDirty = False
         , builderConfirmLeave = False
+        , builderPaletteTab = TabBlocks
+        , builderEnemySel = EnemyGoomba
+        , builderEntities = entities gs
         , builderCam = (0, 0)
         , builderPanning = False
         , builderLastMouse = (0, 0)
@@ -393,17 +412,90 @@ startGame menuState = do
     print (colliders (world initialState))
   return (Playing initialState)
 
+-- Enter the world map screen (press Enter there to start the default level)
+startWorldMap :: MenuState -> IO AppState
+startWorldMap ms = do
+  let worldPath = "worlds/default.json"
+  hasFile <- doesFileExist worldPath
+  if hasFile
+    then do
+      e <- loadWorldMapFile worldPath
+      case e of
+        Prelude.Left err -> do
+          putStrLn ("Failed to load world file: " ++ err)
+          return (Menu ms)
+        Prelude.Right wm -> do
+          let initial = MapState { wmWorldMap = wm
+                                 , wmCursor = NodeId 0
+                                 , wmMenuState = ms
+                                 , wmAlong = Nothing
+                                 , wmSpeed = 240
+                                 }
+          return (WorldMapScreen initial)
+    else do
+      putStrLn ("World file not found: " ++ worldPath)
+      return (Menu ms)
+
+-- Basic world map input: Esc -> back to menu; Enter -> start default game
+handleWorldMapInput :: Event -> MapState -> IO AppState
+handleWorldMapInput e ms@MapState { wmWorldMap = wm, wmCursor = cur, wmAlong } = case e of
+  EventKey (SpecialKey KeyEsc) Down _ _   -> return (Menu (wmMenuState ms))
+  EventKey (SpecialKey KeyEnter) Down _ _ -> startCurrentNodeLevel ms
+  EventKey (Char 'w') Down _ _ | wmAlong == Nothing -> return (tryMove (0,1))
+  EventKey (Char 'W') Down _ _ | wmAlong == Nothing -> return (tryMove (0,1))
+  EventKey (Char 's') Down _ _ | wmAlong == Nothing -> return (tryMove (0,-1))
+  EventKey (Char 'S') Down _ _ | wmAlong == Nothing -> return (tryMove (0,-1))
+  EventKey (Char 'a') Down _ _ | wmAlong == Nothing -> return (tryMove (-1,0))
+  EventKey (Char 'A') Down _ _ | wmAlong == Nothing -> return (tryMove (-1,0))
+  EventKey (Char 'd') Down _ _ | wmAlong == Nothing -> return (tryMove (1,0))
+  EventKey (Char 'D') Down _ _ | wmAlong == Nothing -> return (tryMove (1,0))
+  _ -> return (WorldMapScreen ms)
+
+  where
+    tryMove :: (Float, Float) -> AppState
+    tryMove dir =
+      let options = adjacentDirected wm cur
+          withScore = [ (o, dot v dir) | o@(_,_,_,v) <- options ]
+          positive = filter ((> 0) . snd) withScore
+      in case positive of
+          [] -> WorldMapScreen ms
+          _  -> let (bestO, _) = maximumBySnd positive
+                    (e, nb, pts, _) = bestO
+                in WorldMapScreen (ms { wmAlong = Just (edgeId e, pts, nb, 0) })
+
+    dot (x1,y1) (x2,y2) = x1*x2 + y1*y2
+
+    maximumBySnd :: Ord b => [(a,b)] -> (a,b)
+    maximumBySnd = foldl1 (\acc@(_,b1) x@(_,b2) -> if b2 > b1 then x else acc)
+
+startCurrentNodeLevel :: MapState -> IO AppState
+startCurrentNodeLevel ms@MapState { wmWorldMap = wm, wmCursor = nid, wmMenuState = m } =
+  case nodeById wm nid >>= levelRef of
+    Nothing -> return (WorldMapScreen ms)
+    Just ref -> do
+      let path = case ref of
+            BuiltIn p  -> p
+            External p -> p
+          debugEnabled = menuDebugMode m
+          screenDims   = menuScreenSize m
+      tileMap <- loadTileMap
+      gs <- loadLevel path debugEnabled tileMap screenDims
+      let gs' = gs { currentMapState = Just ms }
+      return (Playing gs')
+
 startBuilder :: MenuState -> IO AppState
 startBuilder ms@MenuState { menuDebugMode, menuScreenSize } = do
   tileMap <- loadTileMap
+  animMap <- loadAnimMap
   let width = 31
       height = 16
       emptyRow = replicate width Air
       grid = replicate height emptyRow
       builderWorld = World { grid = grid, colliders = [], slopes = [] }
       bs = BuilderState
-             { builderWorld = builderWorld
+              { builderWorld = builderWorld
              , builderTileMap = tileMap
+             , builderAnimMap = animMap
              , builderTileZoom = 1.0
              , builderScreenSize = menuScreenSize
              , builderDebugMode = menuDebugMode
@@ -411,16 +503,31 @@ startBuilder ms@MenuState { menuDebugMode, menuScreenSize } = do
              , builderBrushMode = BrushNormal
              , builderDirty = False
              , builderConfirmLeave = False
+             , builderPaletteTab = TabBlocks
+             , builderEnemySel = EnemyGoomba
+             , builderEntities = []
              , builderCam = (0, 0)
              , builderPanning = False
              , builderLastMouse = (0, 0)
              , builderLMBHeld = False
              , builderLastPaint = Nothing
-             , builderFilePath = Just ("levels/" ++ menuInput ms)
-             }
+              , builderFilePath = Just (((if menuDebugMode then "built-in-levels/" else "levels/") ) ++ menuInput ms)
+              }
   return (Building bs)
 
 handlePlayingInput :: Event -> GameState -> GameState
+-- Pause toggle on ESC
+handlePlayingInput (EventKey (SpecialKey KeyEsc) Down _ _) gs = gs { paused = not (paused gs) }
+-- While paused: UI interactions for pause menu
+handlePlayingInput (EventKey (Char 'r') Down _ _) gs | paused gs = gs { paused = False }
+handlePlayingInput (EventKey (Char 'R') Down _ _) gs | paused gs = gs { paused = False }
+handlePlayingInput (EventKey (Char 'm') Down _ _) gs | paused gs = gs { nextState = NMenu }
+handlePlayingInput (EventKey (Char 'M') Down _ _) gs | paused gs = gs { nextState = NMenu }
+handlePlayingInput (EventKey (MouseButton LeftButton) Down _ (mx, my)) gs@GameState { screenSize } | paused gs =
+  case pausedMenuHit screenSize (mx, my) of
+    Just True  -> gs { paused = False }
+    Just False -> gs { nextState = NMenu }
+    Nothing    -> gs
 -- Movement: arrows and WASD
 handlePlayingInput (EventKey (SpecialKey KeyLeft)  Down _ _) gs = gs { player = (player gs) { moveLeftHeld  = True } }
 handlePlayingInput (EventKey (SpecialKey KeyRight) Down _ _) gs = gs { player = (player gs) { moveRightHeld = True } }
@@ -456,10 +563,13 @@ handlePlayingInput _ gs = gs
 -- Level Builder input: place current brush (Grass) on left-click on non-negative tile indices
 handleBuildingInput :: Event -> BuilderState -> BuilderState
 -- Left click: if inside palette, select brush; otherwise start painting
-handleBuildingInput (EventKey (MouseButton LeftButton) Down _ (mx, my)) bs@BuilderState { builderScreenSize } =
-  case paletteHit builderScreenSize (mx, my) of
+handleBuildingInput (EventKey (MouseButton LeftButton) Down _ (mx, my)) bs@BuilderState { builderScreenSize, builderPaletteTab } =
+  case paletteHit builderScreenSize builderPaletteTab (mx, my) of
+    Just (SelTab tab)   -> bs { builderPaletteTab = tab, builderLMBHeld = False }
     Just (SelTile tile) -> bs { builderBrush = tile, builderBrushMode = BrushNormal, builderLMBHeld = False, builderLastPaint = Nothing }
     Just (SelTool mode) -> bs { builderBrushMode = mode, builderLMBHeld = False, builderLastPaint = Nothing }
+    Just (SelEnemy EnemyGoomba) -> bs { builderEnemySel = EnemyGoomba, builderLMBHeld = False, builderLastPaint = Nothing }
+    Just (SelEnemy EnemyEraser) -> bs { builderEnemySel = EnemyEraser, builderLMBHeld = False, builderLastPaint = Nothing }
     Nothing   -> let bs' = bs { builderLMBHeld = True }
                  in paintAtMouse mx my bs'
 handleBuildingInput (EventKey (MouseButton LeftButton) Up _ _) bs = bs { builderLMBHeld = False, builderLastPaint = Nothing }
@@ -483,7 +593,7 @@ adjustBuilderZoom delta bs@BuilderState { builderTileZoom } =
 
 -- Helper: paint current brush at mouse position if it corresponds to a new valid tile
 paintAtMouse :: Float -> Float -> BuilderState -> BuilderState
-paintAtMouse mx my bs@BuilderState { builderWorld = w, builderScreenSize, builderTileZoom, builderCam = (camX, camY), builderLastPaint, builderBrush, builderBrushMode } =
+paintAtMouse mx my bs@BuilderState { builderWorld = w, builderScreenSize, builderTileZoom, builderCam = (camX, camY), builderLastPaint, builderBrush, builderBrushMode, builderPaletteTab, builderEntities, builderEnemySel } =
   let tilePixels = baseTilePixelSizeForScreen builderScreenSize * builderTileZoom * scaleFactor
       wx = (mx - camX) / tilePixels
       wy = (my - camY) / tilePixels
@@ -493,24 +603,42 @@ paintAtMouse mx my bs@BuilderState { builderWorld = w, builderScreenSize, builde
       (wExpanded, (cx, cy)) = if inBounds then (w, (col, row)) else ensureInBounds w (col, row)
       sameAsLast = builderLastPaint == Just (cx, cy)
   in if not sameAsLast
-        then case builderBrushMode of
-               BrushNormal -> bs { builderWorld = setTile wExpanded (cx, cy) builderBrush
-                                  , builderLastPaint = Just (cx, cy)
-                                  , builderDirty = True }
-               BrushGrassColumn ->
-                 let w1 = setTile wExpanded (cx, cy) Grass
-                     h = length (grid w1)
-                     fillDown world y0
-                       | y0 >= h = world
-                       | otherwise =
-                           case getTile world (cx, y0) of
-                             Air -> fillDown (setTile world (cx, y0) Earth) (y0+1)
-                             _   -> world
-                     wFilled = fillDown w1 (cy + 1)
-                 in bs { builderWorld = wFilled, builderLastPaint = Just (cx, cy), builderDirty = True }
-               BrushEraser -> bs { builderWorld = setTile wExpanded (cx, cy) Air
-                                   , builderLastPaint = Just (cx, cy)
-                                   , builderDirty = True }
+        then case builderPaletteTab of
+               TabEnemies ->
+                 let cxWorld = fromIntegral cx + 0.5
+                     cyWorld = negate (fromIntegral cy) - 0.5
+                     cellOf (x', y') = (floor x', floor (-y'))
+                     isAtCell e = case e of
+                       EGoomba _ Goomba { goombaPos = p } -> cellOf p == (cx, cy)
+                       _ -> False
+                     existsHere = any isAtCell builderEntities
+                     ents' = case builderEnemySel of
+                               EnemyEraser -> filter (not . isAtCell) builderEntities
+                               EnemyGoomba -> if existsHere
+                                                then filter (not . isAtCell) builderEntities
+                                                else (EGoomba 0 defaultGoomba { goombaPos=(cxWorld, cyWorld) } : builderEntities)
+                 in bs { builderWorld = wExpanded
+                       , builderEntities = ents'
+                       , builderLastPaint = Just (cx, cy)
+                       , builderDirty = True }
+               TabBlocks -> case builderBrushMode of
+                 BrushNormal -> bs { builderWorld = setTile wExpanded (cx, cy) builderBrush
+                                    , builderLastPaint = Just (cx, cy)
+                                    , builderDirty = True }
+                 BrushGrassColumn ->
+                   let w1 = setTile wExpanded (cx, cy) Grass
+                       h = length (grid w1)
+                       fillDown world y0
+                         | y0 >= h = world
+                         | otherwise =
+                             case getTile world (cx, y0) of
+                               Air -> fillDown (setTile world (cx, y0) Earth) (y0+1)
+                               _   -> world
+                       wFilled = fillDown w1 (cy + 1)
+                   in bs { builderWorld = wFilled, builderLastPaint = Just (cx, cy), builderDirty = True }
+                 BrushEraser -> bs { builderWorld = setTile wExpanded (cx, cy) Air
+                                     , builderLastPaint = Just (cx, cy)
+                                     , builderDirty = True }
         else bs
 
 -- Hit test for leave confirmation popup buttons: True = Yes, False = No
@@ -544,12 +672,12 @@ leaveToMenuFromBuilder bs = do
             }
   return (Menu ms)
 
--- Palette hit test: returns selected Tile if mouse is inside the right-side palette
--- Two-column palette with tiles and special tools
-data PaletteSel = SelTile Tile | SelTool BrushMode
+-- Palette hit test: with tabs and enemies
+-- Two-column grid beneath a tabs header
+data PaletteSel = SelTile Tile | SelTool BrushMode | SelTab PaletteTab | SelEnemy EnemySel
 
-paletteHit :: (Int, Int) -> (Float, Float) -> Maybe PaletteSel
-paletteHit (screenW, screenH) (mx, my) =
+paletteHit :: (Int, Int) -> PaletteTab -> (Float, Float) -> Maybe PaletteSel
+paletteHit (screenW, screenH) currentTab (mx, my) =
   let sw = fromIntegral screenW :: Float
       sh = fromIntegral screenH :: Float
       panelW = sw / 6
@@ -558,34 +686,47 @@ paletteHit (screenW, screenH) (mx, my) =
       topY   =  sh/2
       bottomY = -sh/2
       insidePanel = mx >= leftX && mx <= rightX && my >= bottomY && my <= topY
-      items = paletteItems
+      tabH = 60 :: Float
+      inTabs = insidePanel && my <= topY && my >= topY - tabH
+      inGrid = insidePanel && my < topY - tabH
+      tabSel | not inTabs = Nothing
+             | mx < leftX + panelW/2 = Just (SelTab TabBlocks)
+             | otherwise              = Just (SelTab TabEnemies)
+      items = case currentTab of
+        TabBlocks  -> paletteItemsBlocks
+        TabEnemies -> paletteItemsEnemies
       n = length items
       cols = 2 :: Int
       rows = (n + cols - 1) `div` cols
       cellW = panelW / fromIntegral cols
-      slotH = sh / fromIntegral (max 1 rows)
+      gridH = sh - tabH
+      slotH = gridH / fromIntegral (max 1 rows)
       colIdx | mx < leftX + cellW = 0
              | otherwise          = 1
       rowIdx | slotH <= 0 = -1
-             | otherwise  = floor ((topY - my) / slotH)
+             | otherwise  = floor (((topY - tabH) - my) / slotH)
       idx = colIdx * rows + rowIdx
-  in if insidePanel && rowIdx >= 0 && rowIdx < rows && idx >= 0 && idx < n
-        then case items !! idx of
-               PTile t     -> Just (SelTile t)
-               PSpecial sb -> Just (SelTool (specialToMode sb))
-        else Nothing
+  in case () of
+      _ | inTabs -> tabSel
+        | inGrid && rowIdx >= 0 && rowIdx < rows && idx >= 0 && idx < n ->
+            case items !! idx of
+              PTile t        -> Just (SelTile t)
+              PSpecial sb    -> Just (SelTool (specialToMode sb))
+              PEnemyGoomba   -> Just (SelEnemy EnemyGoomba)
+              PEnemyEraser   -> Just (SelEnemy EnemyEraser)
+        | otherwise -> Nothing
 
 -- Palette tiles in desired order (excluding Air)
 data SpecialBrush = GrassColumn | Eraser
 
-data PaletteItem = PTile Tile | PSpecial SpecialBrush
+data PaletteItem = PTile Tile | PSpecial SpecialBrush | PEnemyGoomba | PEnemyEraser
 
 specialToMode :: SpecialBrush -> BrushMode
 specialToMode GrassColumn = BrushGrassColumn
 specialToMode Eraser      = BrushEraser
 
-paletteItems :: [PaletteItem]
-paletteItems =
+paletteItemsBlocks :: [PaletteItem]
+paletteItemsBlocks =
   [ PSpecial GrassColumn
   , PSpecial Eraser
   , PTile Grass
@@ -596,6 +737,12 @@ paletteItems =
   , PTile QuestionBlockEmpty
   , PTile Flag
   , PTile Spikes
+  ]
+
+paletteItemsEnemies :: [PaletteItem]
+paletteItemsEnemies =
+  [ PEnemyEraser
+  , PEnemyGoomba
   ]
 
 
@@ -639,3 +786,20 @@ adjustTileZoom delta gs =
   let cur = tileZoom gs
       newVal = clampTileZoom (cur + delta)
   in gs { tileZoom = newVal }
+
+-- Pause menu hit test: True = Resume, False = Main Menu
+pausedMenuHit :: (Int, Int) -> (Float, Float) -> Maybe Bool
+pausedMenuHit (screenW, screenH) (mx, my) =
+  let sw = fromIntegral screenW :: Float
+      sh = fromIntegral screenH :: Float
+      panelW = sw * 0.6
+      panelH = sh * 0.3
+      btnW = 260 :: Float
+      btnH = 90  :: Float
+      btnY = 0 - panelH * 0.15
+      resumeX = - panelW * 0.2
+      menuX   =   panelW * 0.2
+      inside cx cy w h = let dx = abs (mx - cx); dy = abs (my - cy) in dx <= w/2 && dy <= h/2
+  in if inside resumeX btnY btnW btnH then Just True
+     else if inside menuX btnY btnW btnH then Just False
+     else Nothing

@@ -75,9 +75,9 @@ saveLevel path gs = do
       pxi, pyi :: Int16
       pxi = packPos px
       pyi = packPos py
-      -- Only save known enemy spawns we can reconstruct
-      encodeSpawn (EGoomba 0 Goomba { goombaPos = (x,y) }) = Just (1 :: Word8, packPos x, packPos y)
-      encodeSpawn (EKoopa  0 Koopa  { koopaPos  = (x,y) }) = Just (2 :: Word8, packPos x, packPos y)
+      -- Save known enemy spawns we can reconstruct (ignore id in file format)
+      encodeSpawn (EGoomba _ Goomba { goombaPos = (x,y) }) = Just (1 :: Word8, packPos x, packPos y)
+      encodeSpawn (EKoopa  _ Koopa  { koopaPos  = (x,y) }) = Just (2 :: Word8, packPos x, packPos y)
       encodeSpawn _ = Nothing
       spawns = mapMaybe encodeSpawn (entities gs)
 
@@ -147,14 +147,15 @@ loadLevel path debugEnabled tileMap screenDims = do
           toEntity (2, x, y) = Just (EKoopa  0 Koopa  { koopaPos=(x,y),  koopaVel=(0,0), koopaDir=Types.Left, koopaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, koopaCollisions = [] })
           toEntity _         = Nothing
           entities' = mapMaybe toEntity spawns
+          entitiesWithIds = zipWith (\ix e -> setId e ix) [0..] entities'
       return GameState
         { world = worldState
         , player = initialPlayer
-        , entities = entities'
+        , entities = entitiesWithIds
         , animMap  = animMap
         -- Elke entity heeft n unieke ID nodig, deze telt op als er een entity gespawnd wordt. Miss kan je 
         -- in de mapMaybe bij entities' berekenen wat entityIdCounter moet zijn (hoogste id die al in gebruik is + 1 bijvoorbeeld?)
-        , entityIdCounter = 0 
+        , entityIdCounter = length entitiesWithIds 
         , tileZoom = 1.0
         , screenSize = screenDims
         , tileMap = tileMap
@@ -175,6 +176,7 @@ loadLevel path debugEnabled tileMap screenDims = do
             , menuInput = ""
             }
         , nextState = Types.NMenu
+        , currentMapState = Nothing
         }
 
 -- Parser for the level format

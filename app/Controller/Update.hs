@@ -13,15 +13,63 @@ import Controller.Collision
 import Controller.Movement
 
 import MathUtils
+import Model.WorldMap (polylineLength, Edge(..), WorldMap(..), MapNode(..), EdgeDir(..), NodeState(..))
 
 update :: Float -> AppState -> IO AppState
 update _  menuState@(Menu _) = return menuState
-update dt (Playing gs)       =
-  let gs' = updateGame dt gs
-  in case nextState gs' of
-    NPlaying -> return . Playing $ gs'
-    _       -> return (Menu $ menuState gs')
+update dt (Playing gs)
+  | paused gs =
+      case nextState gs of
+        NPlaying     -> return (Playing gs)
+        NFinishLevel -> case currentMapState gs of
+                          Just ms -> return (WorldMapScreen (unlockAfterFinish ms))
+                          Nothing -> return (Menu $ menuState gs)
+        _            -> return (Menu $ menuState gs)
+  | otherwise =
+      let gs' = updateGame dt gs
+      in case nextState gs' of
+        NPlaying     -> return . Playing $ gs'
+        NFinishLevel -> case currentMapState gs' of
+                          Just ms -> return (WorldMapScreen (unlockAfterFinish ms))
+                          Nothing -> return (Menu $ menuState gs')
+        _            -> return (Menu $ menuState gs')
 update _ (Building bs)      = return (Building bs)
+update dt (WorldMapScreen ms) = return (WorldMapScreen (updateMap dt ms))
+
+updateMap :: Float -> MapState -> MapState
+updateMap dt ms@MapState { wmAlong = Nothing } = ms
+updateMap dt ms@MapState { wmAlong = Just (eid, pts, dest, t), wmSpeed } =
+  let len = polylineLength pts
+  in if len <= 1e-3
+        then ms { wmCursor = dest, wmAlong = Nothing }
+        else
+          let step = wmSpeed * dt / len
+              t' = t + step
+          in if t' >= 1
+                then ms { wmCursor = dest, wmAlong = Nothing }
+                else ms { wmAlong = Just (eid, pts, dest, t') }
+
+-- Unlock neighbors and mark current node completed
+unlockAfterFinish :: MapState -> MapState
+unlockAfterFinish ms@MapState { wmWorldMap = wm, wmCursor = cur } =
+  let edges' = [ if allowsFrom e cur then e { unlocked = True } else e | e <- edges wm ]
+      neighborIds = [ other e cur | e <- edges wm, allowsFrom e cur ]
+      nodes' = [ updateNode n | n <- nodes wm ]
+      updateNode n
+        | nodeId n == cur = n { nodeState = Completed }
+        | nodeId n `elem` neighborIds = case nodeState n of
+            Locked -> n { nodeState = Unlocked }
+            _      -> n
+        | otherwise = n
+      wm' = wm { nodes = nodes', edges = edges' }
+  in ms { wmWorldMap = wm' }
+  where
+    allowsFrom e nid = case dir e of
+      Undirected -> a e == nid || b e == nid
+      Both       -> a e == nid || b e == nid
+      AtoB       -> a e == nid
+      BtoA       -> b e == nid
+    other e nid = if a e == nid then b e else a e
 
 -- updateGame :: Float -> GameState -> GameState
 -- updateGame dt gs =
@@ -286,22 +334,46 @@ resolveInterEnemyOverlaps gs@GameState { entities = es } =
       EKoopa  _ _ -> True
       _           -> False
 
+    -- World blockers (tiles) to prevent pushing enemies into walls/ground
+    blockers :: [Collider]
+    blockers = colliders (world gs)
+
+    -- Try to move an enemy by a separation vector. If that would collide with
+    -- world/ground, cancel the push and keep its original position.
     moveBy :: Vector -> Entity -> Entity
     moveBy (dx, dy) e = case e of
       EGoomba eid g ->
-        let newPos = addVecToPoint (goombaPos g) (dx, dy)
-            newDir
-              | dx > 0 = Types.Right
-              | dx < 0 = Types.Left
-              | otherwise = goombaDir g
-        in EGoomba eid g { goombaPos = newPos, goombaDir = newDir }
+        let oldPos  = goombaPos g
+            newPos  = addVecToPoint oldPos (dx, dy)
+            allowMove = case goombaColSpec g of
+              Nothing   -> True
+              Just spec ->
+                let testCol = specToCollider newPos (CTEntity eid) spec
+                in not (any (collides testCol) blockers)
+            (finalPos, finalDir)
+              | allowMove =
+                  let nd | dx > 0    = Types.Right
+                         | dx < 0    = Types.Left
+                         | otherwise = goombaDir g
+                  in (newPos, nd)
+              | otherwise = (oldPos, goombaDir g)
+        in EGoomba eid g { goombaPos = finalPos, goombaDir = finalDir }
       EKoopa  eid k ->
-        let newPos = addVecToPoint (koopaPos k) (dx, dy)
-            newDir
-              | dx > 0 = Types.Right
-              | dx < 0 = Types.Left
-              | otherwise = koopaDir k
-        in EKoopa  eid k { koopaPos  = newPos, koopaDir = newDir }
+        let oldPos  = koopaPos k
+            newPos  = addVecToPoint oldPos (dx, dy)
+            allowMove = case koopaColSpec k of
+              Nothing   -> True
+              Just spec ->
+                let testCol = specToCollider newPos (CTEntity eid) spec
+                in not (any (collides testCol) blockers)
+            (finalPos, finalDir)
+              | allowMove =
+                  let nd | dx > 0    = Types.Right
+                         | dx < 0    = Types.Left
+                         | otherwise = koopaDir k
+                  in (newPos, nd)
+              | otherwise = (oldPos, koopaDir k)
+        in EKoopa  eid k { koopaPos  = finalPos, koopaDir = finalDir }
       _             -> e
 
     updateAt :: Int -> (Entity -> Entity) -> [Entity] -> [Entity]

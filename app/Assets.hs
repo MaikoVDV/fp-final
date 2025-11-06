@@ -11,6 +11,7 @@ loadTileMap :: IO TileMap
 loadTileMap = do
   grassPic              <- loadBMP "assets/tiles/grass.bmp"
   earthPic              <- loadBMP "assets/tiles/earth.bmp"
+  earth2Pic             <- loadBMP "assets/tiles/earth2.bmp"
   cratePic              <- loadBMP "assets/tiles/crate.bmp"
   metalBoxPic           <- loadBMP "assets/tiles/metal_box.bmp"
   questionBlockFullPic  <- loadBMP "assets/tiles/question_block_full.bmp"
@@ -20,6 +21,7 @@ loadTileMap = do
   return $ Map.fromList
     [ (Grass,              grassPic)
     , (Earth,              earthPic)
+    , (Earth2,             earth2Pic)
     , (Crate,              cratePic)
     , (MetalBox,           metalBoxPic)
     , (QuestionBlockFull,  questionBlockFullPic)

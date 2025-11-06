@@ -1,0 +1,14 @@
+{
+  "nodes": [
+    { "id": 0, "title": "Start", "level": {"builtIn": "built-in-levels/1-1.lvl"}, "pos": [-300, 0], "type": "Level", "state": "Unlocked" },
+    { "id": 1, "title": "1-2",   "level": {"builtIn": "built-in-levels/1-2.lvl"}, "pos": [-100, 80],  "type": "Level", "state": "Locked" },
+    { "id": 2, "title": "Hub",   "level": null,                                         "pos": [100, 40],   "type": "Hub",   "state": "Locked" },
+    { "id": 3, "title": "Boss",  "level": {"builtIn": "built-in-levels/1-boss.lvl"}, "pos": [280, 20],   "type": "Boss",  "state": "Locked" }
+  ],
+  "edges": [
+    { "id": 0, "a": 0, "b": 1, "dir": "Both", "shape": {"type": "Straight"}, "unlocked": false },
+    { "id": 1, "a": 1, "b": 2, "dir": "Both", "shape": {"type": "Bezier", "p0": [-100,80], "p1": [-40,140], "p2": [40,100], "p3": [100,40]}, "unlocked": false },
+    { "id": 2, "a": 0, "b": 2, "dir": "Both", "shape": {"type": "Polyline", "points": [[-300,0],[-200,-60],[-20,-40],[100,40]]}, "unlocked": false },
+    { "id": 3, "a": 2, "b": 3, "dir": "AtoB", "shape": {"type": "Straight"}, "unlocked": false }
+  ]
+}
