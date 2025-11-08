@@ -116,7 +116,8 @@ damagePlayerN n gs@GameState{ player = p0 } =
 healPlayer :: GameState -> GameState
 healPlayer gs@GameState{ player } = setPlayerHealth gs $ health player + 1
 
-
+healPlayerN :: Int -> GameState -> GameState
+healPlayerN n gs@GameState{ player } = setPlayerHealth gs $ health player + max 0 n
 defaultGoomba :: Goomba
 defaultGoomba = Goomba 
   { goombaPos = (0, 0)

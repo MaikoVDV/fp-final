@@ -1,7 +1,7 @@
 module Controller.Update where
 
 import Graphics.Gloss
-import Data.Maybe (mapMaybe, maybeToList)
+import Data.Maybe (mapMaybe, maybeToList, isJust)
 
 import Model.Types
 import qualified Model.Types as Types
@@ -182,15 +182,16 @@ updatePlayer dt gs =
       animClock'
         | movingInput = playerAnimClock movedPlayer + vxAbs * animRateScale * dt
         | otherwise   = playerAnimClock movedPlayer
+      sliding = isJust (playerSlide movedPlayer)
       jumpTime'
-        | onGround movedPlayer = jumpHoldDuration
-              | otherwise            = jumpTimer
+        | onGround movedPlayer || sliding = jumpHoldDuration
+        | otherwise            = jumpTimer
       jumpDir'
         | onGround movedPlayer = upVector
         | otherwise            = playerJumpDir movedPlayer
       -- Reset jump count when grounded; otherwise keep current
       jumpsAvailable
-        | onGround movedPlayer = maxJumps
+        | onGround movedPlayer || sliding = maxJumps
         | otherwise            = jumpsLeft movedPlayer
       -- Countdown stomp jump boost timer
       stompBoostTimeLeft = max 0 (stompJumpTimeLeft movedPlayer - dt)

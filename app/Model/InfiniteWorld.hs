@@ -75,11 +75,13 @@ appendNextSegment gs infState =
 pickSegment :: Int -> [SegmentMeta] -> IO (Maybe SegmentMeta)
 pickSegment _ [] = return Nothing
 pickSegment target metas = do
-  let withinDelta m = abs (startHeight m - target) <= maxSegmentHeightDelta
+  let withinDelta m =
+        let delta = startHeight m - target
+        in delta <= maxSegmentHeightDelta
       pool = filter withinDelta metas
   if null pool
     then do
-      putStrLn ("No segment within " ++ show maxSegmentHeightDelta ++ " blocks of height " ++ show target ++ ".")
+      putStrLn ("No segment within +" ++ show maxSegmentHeightDelta ++ " blocks above height " ++ show target ++ ".")
       return Nothing
     else do
       idx <- randomRIO (0, length pool - 1)

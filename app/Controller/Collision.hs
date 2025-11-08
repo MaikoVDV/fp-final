@@ -88,7 +88,7 @@ handleCollectibleCollisions gs@GameState { entities, player = p } =
         in if shouldCollect
             then case getEntity acc eId of
                   Nothing -> acc
-                  Just _  -> healPlayer (killEntity acc eId)
+                  Just _  -> healPlayerN 2 (killEntity acc eId)
             else acc
       ECoin eId c ->
         let overlap = overlapsCoinPlayer acc eId c
@@ -129,22 +129,25 @@ handleEnemyCollisions gs@GameState { entities } =
     overlapStep :: Collider -> GameState -> Entity -> GameState
     overlapStep pc acc e = case e of
       EGoomba eId g ->
-        case (goombaCollider eId g) of
+        case goombaCollider eId g of
           Just ec | collides pc ec ->
-            let stomp = isStomp acc g in applyGoombaHit acc eId g stomp
+            let stomp = isStompCollision pc ec (playerVel (player acc))
+            in applyGoombaHit acc eId g stomp
           _ -> acc
       EKoopa eId k ->
-        case (koopaCollider eId k) of
+        case koopaCollider eId k of
           Just ec | collides pc ec -> damagePlayerN goombaContactDamage acc
           _ -> acc
       _ -> acc
 
-    isStomp :: GameState -> Goomba -> Bool
-    isStomp st g =
-      let (_, py) = playerPos (player st)
-          (_, gy) = goombaPos g
-          (_, pvy) = playerVel (player st)
-      in py > gy && pvy < 0
+    isStompCollision :: Collider -> Collider -> (Float, Float) -> Bool
+    isStompCollision playerCol enemyCol (_, pvy) =
+      let (_, playerY) = aPos playerCol
+          (_, enemyY)  = aPos enemyCol
+          playerBottom = playerY - aHeight playerCol / 2
+          enemyTop     = enemyY + aHeight enemyCol / 2
+          tolerance    = 0.2
+      in pvy <= 0 && playerBottom >= enemyTop - tolerance && playerY >= enemyY
 
     applyGoombaHit :: GameState -> Int -> Goomba -> Bool -> GameState
     applyGoombaHit acc eId g stomp =
