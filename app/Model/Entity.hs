@@ -93,6 +93,13 @@ setPlayerHealth gs@GameState{ player = p } h =
               , nextState = NDeath }
       else gs { player = p { health = min maxHealth h' }, nextState = NPlaying }
 
+addCoins :: Int -> GameState -> GameState
+addCoins n gs@GameState { coinsCollected, playerLives } =
+  let n' = max 0 n
+      total = coinsCollected + n'
+      (bonusLives, remainder) = total `divMod` 100
+  in gs { coinsCollected = remainder, playerLives = playerLives + bonusLives }
+
 -- Shorthands for common health changes
 damagePlayer :: GameState -> GameState
 damagePlayer gs@GameState{ player = _p } = damagePlayerN 1 gs

@@ -95,7 +95,7 @@ handleCollectibleCollisions gs@GameState { entities, player = p } =
         in if overlap
             then case getEntity acc eId of
                   Nothing -> acc
-                  Just _  -> killEntity acc eId
+                  Just _  -> addCoins 1 (killEntity acc eId)
             else acc
       _ -> acc
 

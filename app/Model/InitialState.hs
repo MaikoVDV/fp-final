@@ -72,6 +72,7 @@ buildInitialGameState ms@MenuState { menuDebugMode, menuScreenSize } = do
       , uiHeartEmpty = heartEmpty
       , uiCounters = counters
       , playerLives = lives
+      , coinsCollected = 0
       , tileZoom = 1.0
       , screenSize = menuScreenSize
       , tileMap = tileMap

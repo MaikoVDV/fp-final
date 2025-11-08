@@ -8,6 +8,8 @@ import qualified Model.Types as Types
 import Model.Collider
 import Model.Config
 import Model.InfiniteWorld (ensureInfiniteSegments)
+import Model.InitialState (baseTilePixelSizeForScreen)
+import Model.Entity (setPlayerHealth)
 
 import Controller.Input
 import Controller.Collision
@@ -148,6 +150,7 @@ updateGame dt =
   . updateEntities dt
   . clearJump
   . updatePlayer dt
+  . checkVoidDeath
   . incrementFrame
   where
     incrementFrame :: GameState -> GameState
@@ -156,6 +159,12 @@ updateGame dt =
 
     clearJump ::GameState -> GameState
     clearJump gs = gs { pendingJump = False }
+
+    checkVoidDeath :: GameState -> GameState
+    checkVoidDeath gs@GameState { world = World { grid }, player = Player { playerPos = (_, py) } }
+      | null grid = gs
+      | py < fromIntegral (negate (length grid)) = setPlayerHealth gs 0
+      | otherwise = gs
 
 
 updatePlayer :: Float -> GameState -> GameState
@@ -238,7 +247,46 @@ updatePlayer dt gs =
 
 
 updateEntities :: Float -> GameState -> GameState
-updateEntities dt gs = gs { entities = map (updateEntity dt gs) (entities gs) }
+updateEntities dt gs = gs { entities = map (updateIfActive dt gs) (entities gs) }
+  where
+    updateIfActive delta state entity
+      | entityWithinActiveBounds state entity = updateEntity delta state entity
+      | otherwise = entity
+
+entityWithinActiveBounds :: GameState -> Entity -> Bool
+entityWithinActiveBounds gs entity =
+  case entityPosition entity of
+    Nothing   -> True
+    Just pos  -> pointInBounds (activationBounds gs) pos
+
+activationBounds :: GameState -> (Float, Float, Float, Float)
+activationBounds GameState { player = Player { playerPos = (px, py) }, screenSize = (screenWInt, screenHInt), tileZoom } =
+  let tilePixels = baseTilePixelSizeForScreen (screenWInt, screenHInt) * tileZoom * scaleFactor
+      screenWidth  = fromIntegral screenWInt
+      screenHeight = fromIntegral screenHInt
+      desiredPlayerScreenFraction = 1 / 3 :: Float
+      targetPlayerY = (-0.5 + desiredPlayerScreenFraction) * screenHeight
+      halfWidthTiles = screenWidth / (2 * tilePixels)
+      offsetMin = (-screenHeight / 2 - targetPlayerY) / tilePixels
+      offsetMax = ( screenHeight / 2 - targetPlayerY) / tilePixels
+      margin = 2.5
+      minX = px - halfWidthTiles - margin
+      maxX = px + halfWidthTiles + margin
+      minY = py + offsetMin - margin
+      maxY = py + offsetMax + margin
+  in (minX, maxX, minY, maxY)
+
+pointInBounds :: (Float, Float, Float, Float) -> Point -> Bool
+pointInBounds (minX, maxX, minY, maxY) (x, y) =
+  x >= minX && x <= maxX && y >= minY && y <= maxY
+
+entityPosition :: Entity -> Maybe Point
+entityPosition (EGoomba _ Goomba { goombaPos }) = Just goombaPos
+entityPosition (EKoopa  _ Koopa  { koopaPos  }) = Just koopaPos
+entityPosition (EPowerup _ Powerup { powerupPos }) = Just powerupPos
+entityPosition (ECoin    _ Coin    { coinPos    }) = Just coinPos
+entityPosition _ = Nothing
+
 -- Handle updating different types of entities separately
 updateEntity :: Float -> GameState -> Entity -> Entity
 updateEntity dt gs (EGoomba  gId  g)  = EGoomba  gId  (updateGoomba  dt gs gId  g)

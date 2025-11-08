@@ -97,6 +97,7 @@ saveBuilderLevel path bs = do
         , uiHeartEmpty = let (_,_,c) = hearts in c
         , uiCounters = counters
         , playerLives = 0
+        , coinsCollected = 0
         , tileZoom = builderTileZoom bs
         , screenSize = builderScreenSize bs
         , frameCount = 0

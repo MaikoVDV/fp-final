@@ -152,6 +152,7 @@ loadLevel path debugEnabled tileMap screenDims = do
         , uiHeartEmpty = heartEmpty
         , uiCounters   = counters
         , playerLives  = lives
+        , coinsCollected = 0
         -- Elke entity heeft n unieke ID nodig, deze telt op als er een entity gespawnd wordt. Miss kan je 
         -- in de mapMaybe bij entities' berekenen wat entityIdCounter moet zijn (hoogste id die al in gebruik is + 1 bijvoorbeeld?)
         , entityIdCounter = length entitiesWithIds 

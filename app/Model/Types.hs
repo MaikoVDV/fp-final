@@ -17,6 +17,7 @@ data GameState = GameState
   , uiHeartEmpty    :: Picture
   , uiCounters      :: Map.Map Char Picture
   , playerLives     :: Int
+  , coinsCollected  :: Int
   , tileZoom        :: Float
   , screenSize      :: (Int, Int)
   , frameCount      :: Int

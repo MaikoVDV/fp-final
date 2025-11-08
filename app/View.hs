@@ -12,6 +12,82 @@ import Model.Collider
 import Model.InitialState
 import Model.Config
 
+data VisibleBounds = VisibleBounds
+  { vbMinX :: Float
+  , vbMaxX :: Float
+  , vbMinY :: Float
+  , vbMaxY :: Float
+  }
+
+expandBounds :: VisibleBounds -> Float -> VisibleBounds
+expandBounds VisibleBounds { vbMinX, vbMaxX, vbMinY, vbMaxY } extra =
+  VisibleBounds
+    { vbMinX = vbMinX - extra
+    , vbMaxX = vbMaxX + extra
+    , vbMinY = vbMinY - extra
+    , vbMaxY = vbMaxY + extra
+    }
+
+visibleBoundsFromCamera :: Float -> Float -> Float -> Float -> Float -> VisibleBounds
+visibleBoundsFromCamera tilePixels screenWidth screenHeight camX camY =
+  VisibleBounds
+    { vbMinX = (-screenWidth / 2 - camX) / tilePixels
+    , vbMaxX = ( screenWidth / 2 - camX) / tilePixels
+    , vbMinY = (-screenHeight / 2 - camY) / tilePixels
+    , vbMaxY = ( screenHeight / 2 - camY) / tilePixels
+    }
+
+visibleRowRange :: VisibleBounds -> Int -> (Int, Int)
+visibleRowRange _ height | height <= 0 = (0, -1)
+visibleRowRange VisibleBounds { vbMinY, vbMaxY } height =
+  let rawStart = ceiling (-vbMaxY - 0.5)
+      rawEnd   = floor   (-vbMinY - 0.5)
+      start = max 0 rawStart
+      end   = min (height - 1) rawEnd
+  in if start > end then (0, -1) else (start, end)
+
+visibleColRange :: VisibleBounds -> Int -> (Int, Int)
+visibleColRange _ width | width <= 0 = (0, -1)
+visibleColRange VisibleBounds { vbMinX, vbMaxX } width =
+  let rawStart = floor (vbMinX - 1)
+      rawEnd   = ceiling (vbMaxX + 1)
+      start = max 0 rawStart
+      end   = min (width - 1) rawEnd
+  in if start > end then (0, -1) else (start, end)
+
+rangeList :: (Int, Int) -> [Int]
+rangeList (a, b)
+  | a > b     = []
+  | otherwise = [a .. b]
+
+pointWithin :: VisibleBounds -> Point -> Bool
+pointWithin VisibleBounds { vbMinX, vbMaxX, vbMinY, vbMaxY } (x, y) =
+  x >= vbMinX && x <= vbMaxX && y >= vbMinY && y <= vbMaxY
+
+entityWorldPos :: Entity -> Maybe Point
+entityWorldPos (EGoomba _ Goomba { goombaPos }) = Just goombaPos
+entityWorldPos (EKoopa  _ Koopa  { koopaPos  }) = Just koopaPos
+entityWorldPos (EPowerup _ Powerup { powerupPos }) = Just powerupPos
+entityWorldPos (ECoin    _ Coin    { coinPos    }) = Just coinPos
+entityWorldPos _ = Nothing
+
+entityVisible :: VisibleBounds -> Entity -> Bool
+entityVisible bounds entity =
+  case entityWorldPos entity of
+    Just pos -> pointWithin (expandBounds bounds 1.5) pos
+    Nothing  -> True
+
+colliderVisible :: VisibleBounds -> Collider -> Bool
+colliderVisible bounds AABB { aPos = (cx, cy), aWidth, aHeight } =
+  let halfW = aWidth / 2
+      halfH = aHeight / 2
+      left   = cx - halfW
+      right  = cx + halfW
+      bottom = cy - halfH
+      top    = cy + halfH
+      VisibleBounds { vbMinX, vbMaxX, vbMinY, vbMaxY } = expandBounds bounds 1.0
+  in not (right < vbMinX || left > vbMaxX || top < vbMinY || bottom > vbMaxY)
+
 -- Shared helper: decide which tile to render based on neighbors
 -- Earth tiles render as a random Earth variant; Grass with ground above also renders as Earth variant
 renderedTileFor :: [[Tile]] -> Int -> Int -> Tile -> Tile
@@ -61,17 +137,27 @@ viewGame :: GameState -> Picture
 viewGame gs@GameState { player, screenSize, frameCount } =
   let tilePixels = tilePixelsForState gs
       (px, py) = playerPos player
+      worldRows = grid (world gs)
+      worldHeight = length worldRows
       (screenWidthInt, screenHeightInt) = screenSize
       screenWidth  = fromIntegral screenWidthInt
       screenHeight = fromIntegral screenHeightInt
       desiredPlayerScreenFraction = 1 / 3 :: Float
       targetPlayerY = (-0.5 + desiredPlayerScreenFraction) * screenHeight
-      camX = -px * tilePixels
-      camY = targetPlayerY - (py * tilePixels)
+      halfWidthTiles = screenWidth / (2 * tilePixels)
+      clampedPx = max halfWidthTiles px
+      camX = -(clampedPx * tilePixels)
+      rawCamY = targetPlayerY - (py * tilePixels)
+      maxCamY =
+        if worldHeight <= 0
+          then rawCamY
+          else fromIntegral worldHeight * tilePixels - screenHeight / 2
+      camY = min rawCamY maxCamY
+      visibleBounds = expandBounds (visibleBoundsFromCamera tilePixels screenWidth screenHeight camX camY) 2.0
       worldPic = translate camX camY $
         Pictures
-          [ renderWorld tilePixels gs 
-          , renderEntities tilePixels gs
+          [ renderWorld tilePixels visibleBounds gs 
+          , renderEntities tilePixels visibleBounds gs
           , renderPlayer tilePixels player frameCount
           ]
       pauseOverlay = if paused gs then renderPauseMenu (screenWidthInt, screenHeightInt) else blank
@@ -421,33 +507,49 @@ renderBuilderWorld tilePixels world tileMap debugMode =
     redOverlay = Pictures [leftArea, topArea, rightArea, bottomArea]
   in Pictures ([redOverlay, tilesPic] ++ colliderPics)
 
-renderWorld :: Float -> GameState -> Picture
-renderWorld tilePixels GameState { world, tileMap, player, entities, debugMode } =
-  let 
-    getTileSprite :: TileMap -> Tile -> Picture
-    getTileSprite m t = Map.findWithDefault blank t m
+renderWorld :: Float -> VisibleBounds -> GameState -> Picture
+renderWorld tilePixels bounds GameState { world, tileMap, player, entities, debugMode } =
+  case grid world of
+    [] -> blank
+    rows ->
+      let height = length rows
+          width  = length (head rows)
+          (rowStart, rowEnd) = visibleRowRange bounds height
+          (colStart, colEnd) = visibleColRange bounds width
+          rowIndices = rangeList (rowStart, rowEnd)
+          getTileSprite :: TileMap -> Tile -> Picture
+          getTileSprite m t = Map.findWithDefault blank t m
+          tilesPic = Pictures
+            [ let t' = renderedTileFor rows x y tile
+                  xWorld = fromIntegral x + 0.5
+                  yWorld = negate (fromIntegral y) - 0.5
+              in translate (xWorld * tilePixels) (yWorld * tilePixels)
+                   (withTileScale tilePixels (getTileSprite tileMap t'))
+            | y <- rowIndices
+            , let row = rows !! y
+            , let rowLen = length row
+            , rowLen > 0
+            , let startX = max colStart 0
+            , let endX = min colEnd (rowLen - 1)
+            , startX <= endX
+            , let cols = [startX .. endX]
+            , x <- cols
+            , let tile = row !! x
+            ]
+          colliderPics
+            | debugMode =
+                let colliderBounds = expandBounds bounds 2
+                    worldCollidersPics = map (renderAABB tilePixels) (filter (colliderVisible colliderBounds) (colliders world))
+                    playerColliderPic  = map (renderAABB tilePixels) (maybeToList (playerCollider player))
+                    entityColliderPics = map (renderAABB tilePixels) (mapMaybe entityCollider (filter (entityVisible bounds) entities))
+                in [Pictures (worldCollidersPics ++ playerColliderPic ++ entityColliderPics)]
+            | otherwise = []
+      in Pictures (tilesPic : colliderPics)
 
-    tilesPic = Pictures
-      [ let t' = case tile of
-                    _ -> renderedTileFor (grid world) x y tile
-            xWorld = fromIntegral x + 0.5
-            yWorld = negate (fromIntegral y) - 0.5
-        in translate (xWorld * tilePixels) (yWorld * tilePixels)
-             (withTileScale tilePixels (getTileSprite tileMap t'))
-      | (y, row)  <- zip ([0..] :: [Int]) $ grid world
-      , (x, tile) <- zip ([0..] :: [Int]) row
-      ]
-    colliderPics
-      | debugMode =
-          let worldCollidersPics = map (renderAABB tilePixels) (colliders world)
-              playerColliderPic  = map (renderAABB tilePixels) (maybeToList (playerCollider player))
-              entityColliderPics = map (renderAABB tilePixels) (mapMaybe entityCollider entities)
-          in [Pictures (worldCollidersPics ++ playerColliderPic ++ entityColliderPics)]
-      | otherwise = []
-  in Pictures (tilesPic : colliderPics)
-
-renderEntities :: Float -> GameState -> Picture
-renderEntities tilePixels GameState { entities, animMap, frameCount } = Pictures $ map (renderEntity tilePixels animMap frameCount) entities
+renderEntities :: Float -> VisibleBounds -> GameState -> Picture
+renderEntities tilePixels bounds GameState { entities, animMap, frameCount } =
+  let visible = filter (entityVisible bounds) entities
+  in Pictures (map (renderEntity tilePixels animMap frameCount) visible)
 
 renderEntity :: Float -> AnimMap -> Int -> Entity -> Picture
 renderEntity tPx m fCtx (EGoomba   _ Goomba { goombaPos, goombaDir, goombaMode })   =
@@ -524,7 +626,7 @@ dirToPictureScaleX Types.Right = -1
 
 -- Simple HUD: show jumps remaining in top-left corner
 renderHUD :: Float -> Float -> GameState -> Picture
-renderHUD screenW screenH gs@GameState { player, uiHeartFull, uiHeartHalf, uiHeartEmpty, uiCounters, playerLives } =
+renderHUD screenW screenH gs@GameState { player, uiHeartFull, uiHeartHalf, uiHeartEmpty, uiCounters, playerLives, coinsCollected, animMap = hudAnimMap } =
   let
     -- Common UI placement values
     margin = 20 :: Float
@@ -548,13 +650,32 @@ renderHUD screenW screenH gs@GameState { player, uiHeartFull, uiHeartHalf, uiHea
     counterScale = (screenH * 0.06) / assetTilePixelSize
     counterSpacing = 16 :: Float
     rightX = screenW / 2 - margin
-    counterPics = [ case Map.lookup ch uiCounters of { Just p -> p; Nothing -> blank } | ch <- showLives ]
-    totalWidth = counterSpacing * fromIntegral (length counterPics)
+    counterPics = [ Map.findWithDefault blank ch uiCounters | ch <- showLives ]
+    livesWidth = counterSpacing * fromIntegral (length counterPics)
+    coinDigits =
+      let s = show coinsCollected
+      in replicate (max 0 (3 - length s)) '0' ++ s
+    coinDigitPics = [ Map.findWithDefault blank ch uiCounters | ch <- coinDigits ]
+    coinIconBase = case getEntityAnim hudAnimMap TCoin of
+                     (frame:_) -> frame
+                     _         -> blank
+    coinIconPic = scale counterScale counterScale coinIconBase
+    coinSpacing = counterSpacing
+    coinWidth = coinSpacing * (1 + fromIntegral (length coinDigitPics))
+    gapBetweenCounters = 20 :: Float
+    totalWidth = coinWidth + gapBetweenCounters + livesWidth
     startX = rightX - totalWidth
-    countersPic = translate startX (topY - 16)
-                    $ Pictures [ translate (fromIntegral i * counterSpacing) 0 (scale counterScale counterScale p)
-                               | (i,p) <- zip [0..(length counterPics - 1)] counterPics ]
-  in Pictures (hearts ++ [countersPic])
+    coinBlock =
+      translate startX (topY - 16) $
+        Pictures $
+          [coinIconPic] ++
+          [ translate (coinSpacing * (fromIntegral i + 1)) 0 (scale counterScale counterScale p)
+          | (i, p) <- zip [0..] coinDigitPics ]
+    livesBlock =
+      translate (startX + coinWidth + gapBetweenCounters) (topY - 16) $
+        Pictures [ translate (fromIntegral i * counterSpacing) 0 (scale counterScale counterScale p)
+                 | (i,p) <- zip [0..(length counterPics - 1)] counterPics ]
+  in Pictures (hearts ++ [coinBlock, livesBlock])
 
 -- Pause overlay with Resume and Main Menu buttons
 renderPauseMenu :: (Int, Int) -> Picture
