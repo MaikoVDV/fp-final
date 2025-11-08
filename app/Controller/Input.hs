@@ -1,27 +1,28 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Controller.Input where
 
 import Graphics.Gloss.Interface.IO.Game
 import System.Exit (exitSuccess)
-import System.Directory (createDirectoryIfMissing, listDirectory, doesDirectoryExist, removeFile)
-import System.FilePath (takeDirectory)
+import System.Directory (createDirectoryIfMissing, listDirectory, doesDirectoryExist, removeFile, doesFileExist)
+import System.FilePath (takeDirectory, takeFileName, dropExtension, (</>), (<.>))
 import Data.List (isPrefixOf)
+import Data.Maybe (listToMaybe)
 import Control.Monad (when)
 import Control.Exception (catch, SomeException)
+import Data.Aeson (encode, object, (.=))
+import qualified Data.ByteString.Lazy as BL
 
 import Model.Types
-import LevelCodec
+import LevelCodec (saveLevel, loadLevel)
 import MathUtils
 import Model.InitialState
-import Model.Config
 import Model.World
 import Assets
-import Model.Config (maxHealth)
-import qualified Data.Map as Map
+import Model.Config (maxHealth, zoomStep, scaleFactor, jumpHoldDuration, jumpHoldAccelStart)
 import Model.Entity (defaultPlayer, defaultGoomba, defaultCoin)
-import Model.WorldMap (exampleWorldMap, NodeId(..), adjacentDirected, Edge(..), nodeById, LevelRef(..), MapNode(..))
-import LevelCodec (loadLevel)
+import Model.WorldMap (NodeId(..), adjacentDirected, nodeById, LevelRef(..), levelRef, edgeId)
 import Model.WorldMapCodec (loadWorldMapFile)
-import System.Directory (doesFileExist)
 
 input :: Event -> AppState -> IO AppState
 -- Press 's' in build mode to save the current level
@@ -45,6 +46,10 @@ input e appState =
         saveBuilderLevel outPath0 bs
         putStrLn ("Saved level to " ++ outPath0)
         return (Building (bs { builderDirty = False }))
+      -- Save current layout as an infinite-segment snippet (debug builder only)
+      EventKey (Char 'p') Down _ _ | builderDebugMode bs -> do
+        saveBuilderSegment bs
+        return (Building bs)
       -- Escape: if dirty prompt, otherwise leave to menu
       EventKey (SpecialKey KeyEsc) Down _ _ ->
         if builderConfirmLeave bs
@@ -101,6 +106,83 @@ saveBuilderLevel path bs = do
         , currentMapState = Nothing
         }
   saveLevel path gs
+
+segmentsDirectory :: FilePath
+segmentsDirectory = "Infinite mode segments"
+
+segmentMetaSuffix :: String
+segmentMetaSuffix = ".segment.json"
+
+saveBuilderSegment :: BuilderState -> IO ()
+saveBuilderSegment bs =
+  case deriveSegmentHeights (builderWorld bs) of
+    Prelude.Left err -> putStrLn ("Unable to save infinite segment: " ++ err)
+    Prelude.Right (startHeight, endHeight) -> do
+      createDirectoryIfMissing True segmentsDirectory
+      (levelPath, metaPath, baseName) <- allocateSegmentPaths (builderSegmentBaseName bs)
+      saveBuilderLevel levelPath bs
+      let metaJson = object
+            [ "segmentName" .= baseName
+            , "levelPath"   .= levelPath
+            , "levelFile"   .= takeFileName levelPath
+            , "startHeight" .= startHeight
+            , "endHeight"   .= endHeight
+            ]
+      BL.writeFile metaPath (encode metaJson)
+      putStrLn ("Saved infinite segment \"" ++ baseName ++ "\" (" ++ show startHeight ++ " -> " ++ show endHeight ++ ")")
+
+deriveSegmentHeights :: World -> Either String (Int, Int)
+deriveSegmentHeights World { grid = rows }
+  | null rows = Prelude.Left "level has no rows"
+  | width <= 0 = Prelude.Left "level has no columns"
+  | otherwise =
+      case (edgeHeight 0, edgeHeight (width - 1)) of
+        (Nothing, _) -> Prelude.Left "left edge must contain at least one solid tile"
+        (_, Nothing) -> Prelude.Left "right edge must contain at least one solid tile"
+        (Just leftH, Just rightH) -> Prelude.Right (leftH, rightH)
+  where
+    rowCount = length rows
+    width = maximum (0 : map length rows)
+    edgeHeight :: Int -> Maybe Int
+    edgeHeight col = do
+      rowIdx <- columnSurfaceRow rows col
+      return ((rowCount - 1) - rowIdx)
+
+columnSurfaceRow :: [[Tile]] -> Int -> Maybe Int
+columnSurfaceRow rows col =
+  listToMaybe
+    [ y
+    | (y, row) <- zip [0 ..] rows
+    , col < length row
+    , isSolidTile (row !! col)
+    ]
+
+isSolidTile :: Tile -> Bool
+isSolidTile Air = False
+isSolidTile _   = True
+
+builderSegmentBaseName :: BuilderState -> String
+builderSegmentBaseName bs =
+  case builderFilePath bs >>= nonEmpty . dropExtension . takeFileName of
+    Just name -> name
+    Nothing   -> "segment"
+  where
+    nonEmpty "" = Nothing
+    nonEmpty s  = Just s
+
+allocateSegmentPaths :: String -> IO (FilePath, FilePath, String)
+allocateSegmentPaths baseName = go 0
+  where
+    go :: Int -> IO (FilePath, FilePath, String)
+    go n = do
+      let suffix = if n == 0 then baseName else baseName ++ "-" ++ show n
+          levelPath = segmentsDirectory </> (suffix <.> "lvl")
+          metaPath  = segmentsDirectory </> (suffix ++ segmentMetaSuffix)
+      levelExists <- doesFileExist levelPath
+      metaExists  <- doesFileExist metaPath
+      if not levelExists && not metaExists
+        then return (levelPath, metaPath, suffix)
+        else go (n + 1)
 
 handleMenuInput :: Event -> MenuState -> IO AppState
 handleMenuInput e ms@MenuState { menuFocus, menuPage } = case menuPage of
