@@ -85,4 +85,5 @@ buildInitialGameState ms@MenuState { menuDebugMode, menuScreenSize } = do
       , menuState = ms
       , nextState = NMenu
       , currentMapState = Nothing
+      , infiniteState = Nothing
       }

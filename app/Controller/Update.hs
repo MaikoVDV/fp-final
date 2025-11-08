@@ -7,6 +7,7 @@ import Model.Types
 import qualified Model.Types as Types
 import Model.Collider
 import Model.Config
+import Model.InfiniteWorld (ensureInfiniteSegments)
 
 import Controller.Input
 import Controller.Collision
@@ -31,19 +32,20 @@ update dt (Playing gs)
                             return (WorldMapScreen ms')
                           Nothing -> return (Menu $ menuState gs)
         _            -> return (Menu $ menuState gs)
-  | otherwise =
-      let gs' = updateGame dt gs
-      in do
-        -- Persist lives if changed
-        let l0 = playerLives gs
-            l1 = playerLives gs'
-        if l1 /= l0 then saveLives l1 else return ()
-        -- If died with no lives left: restore 5 lives and reset world progress unless boss defeated
-        gs'' <- case nextState gs' of
-                  NDeath | playerLives gs' <= 0 -> do
+  | otherwise = do
+      gsPrepared <- ensureInfiniteSegments gs
+      let gs' = updateGame dt gsPrepared
+      gsPost <- ensureInfiniteSegments gs'
+      -- Persist lives if changed
+      let l0 = playerLives gsPrepared
+          l1 = playerLives gsPost
+      if l1 /= l0 then saveLives l1 else return ()
+      -- If died with no lives left: restore 5 lives and reset world progress unless boss defeated
+      gsFinal <- case nextState gsPost of
+                  NDeath | playerLives gsPost <= 0 -> do
                     let newLives = 5
                     saveLives newLives
-                    case currentMapState gs' of
+                    case currentMapState gsPost of
                       Just ms -> do
                         let wm = wmWorldMap ms
                             bossCompleted = any (\n -> nodeType n == Boss && nodeState n == Completed) (nodes wm)
@@ -63,21 +65,21 @@ update dt (Playing gs)
                                 wm' = wm { nodes = map resetNode (nodes wm), edges = edges1 }
                             saveWorldMapFile (wmFilePath ms) wm'
                           else return ()
-                        return gs' { playerLives = newLives }
-                      Nothing -> return gs' { playerLives = newLives }
-                  _ -> return gs'
-        case nextState gs'' of
-          NPlaying     -> return . Playing $ gs''
-          NFinishLevel -> case currentMapState gs'' of
+                        return gsPost { playerLives = newLives }
+                      Nothing -> return gsPost { playerLives = newLives }
+                  _ -> return gsPost
+      case nextState gsFinal of
+          NPlaying     -> return . Playing $ gsFinal
+          NFinishLevel -> case currentMapState gsFinal of
                             Just ms -> do
                               let ms' = unlockAfterFinish ms
                               saveWorldMapFile (wmFilePath ms') (wmWorldMap ms')
                               return (WorldMapScreen ms')
-                            Nothing -> return (Menu $ menuState gs'')
-          NDeath       -> case currentMapState gs'' of
+                            Nothing -> return (Menu $ menuState gsFinal)
+          NDeath       -> case currentMapState gsFinal of
                             Just ms -> return (WorldMapScreen ms)
-                            Nothing -> return (Menu $ menuState gs'')
-          _            -> return (Menu $ menuState gs'')
+                            Nothing -> return (Menu $ menuState gsFinal)
+          _            -> return (Menu $ menuState gsFinal)
 update _ (Building bs)      = return (Building bs)
 update dt (WorldMapScreen ms) = return (WorldMapScreen (updateMap dt ms))
 

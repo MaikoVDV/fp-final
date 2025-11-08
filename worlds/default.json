@@ -1,14 +1,14 @@
 {
   "nodes": [
-    {"id":0,"level":{"builtIn":"built-in-levels/1-1.lvl"},"pos":[-300,0],"state":"Unlocked","title":"Start","type":"Level"},
-    {"id":1,"level":{"builtIn":"built-in-levels/1-2.lvl"},"pos":[-100,80],"state":"Locked","title":"1-2","type":"Level"},
-    {"id":2,"level":null,"pos":[100,40],"state":"Locked","title":"Hub","type":"Hub"},
-    {"id":3,"level":{"builtIn":"built-in-levels/1-boss.lvl"},"pos":[280,20],"state":"Locked","title":"Boss","type":"Boss"}
+    {"id":0,"level":{"builtIn":"built-in-levels/1-1.lvl"},"pos":[-300,0],"state":"Completed","title":"Start","type":"Level"},
+    {"id":1,"level":{"builtIn":"built-in-levels/1-2.lvl"},"pos":[-100,80],"state":"Completed","title":"1-2","type":"Level"},
+    {"id":2,"level":null,"pos":[100,40],"state":"Unlocked","title":"Hub","type":"Hub"},
+    {"id":3,"level":{"builtIn":"built-in-levels/1-boss.lvl"},"pos":[280,20],"state":"Completed","title":"Boss","type":"Boss"}
   ],
   "edges": [
     {"a":0,"b":1,"dir":"Both","id":0,"shape":{"type":"Straight"},"unlocked":true},
-    {"a":1,"b":2,"dir":"Both","id":1,"shape":{"p0":[-100,80],"p1":[-40,140],"p2":[40,100],"p3":[100,40],"type":"Bezier"},"unlocked":false},
+    {"a":1,"b":2,"dir":"Both","id":1,"shape":{"p0":[-100,80],"p1":[-40,140],"p2":[40,100],"p3":[100,40],"type":"Bezier"},"unlocked":true},
     {"a":0,"b":2,"dir":"Both","id":2,"shape":{"points":[[-300,0],[-200,-60],[-20,-40],[100,40]],"type":"Polyline"},"unlocked":true},
-    {"a":2,"b":3,"dir":"Both","id":3,"shape":{"type":"Straight"},"unlocked":false}
+    {"a":2,"b":3,"dir":"Both","id":3,"shape":{"type":"Straight"},"unlocked":true}
   ]
 }

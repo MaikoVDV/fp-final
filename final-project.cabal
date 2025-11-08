@@ -24,6 +24,8 @@ executable final-project
       Model.Entity
       Model.Collider
       Model.InitialState
+      Model.InfiniteSegments
+      Model.InfiniteWorld
       Model.WorldMap
       View
       Controller.Update
@@ -49,6 +51,7 @@ executable final-project
                     , aeson-pretty
                     , text
                     , vector
+                    , random
 
     hs-source-dirs:   app
 

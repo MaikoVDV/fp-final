@@ -1,6 +1,7 @@
 module LevelCodec
   ( saveLevel
   , loadLevel
+  , loadSegmentWorld
   , tileId
   , tileFromId
   ) where
@@ -134,29 +135,13 @@ loadLevel path debugEnabled tileMap screenDims = do
   case parseLevel bs of
     Prelude.Left err -> ioError (userError ("Level load error: " ++ err))
     Prelude.Right (width, tiles1D, (px,py), spawns) -> do
-      let height :: Int
-          height = if width == 0 then 0 else length tiles1D `div` width
-          -- Rebuild grid row-major
-          grid' = [ take width (drop (y*width) tiles1D) | y <- [0..height - 1] ]
-          worldState = World
-            { grid = grid'
-            , colliders = generateCollidersForWorld grid'
-            , slopes = []
-            }
+      let worldState = makeWorldFromTiles width tiles1D
           initialPlayer = defaultPlayer
             { playerPos    = (px, py)
             , playerAnim   = playerAnimation
             , health       = Config.maxHealth
             }
-          -- Entities hebben net als player ook sprites, denk niet dat het handig is om die allemaal aan loadLevel te passen.
-          -- We hebben sws nog niet echt een goed systeem voor sprites en animations laden, dus dat moeten we nog ff bedenken
-          -- op n manier dat het ook goed werkt met de levelcodec
-          toEntity (1, x, y) = Just (EGoomba 0 Goomba { goombaPos=(x,y), goombaVel=(0,0), goombaDir=Types.Left, goombaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, goombaOnGround=False, goombaCollisions = [], goombaMode = Types.GWalking })
-          toEntity (2, x, y) = Just (EKoopa  0 Koopa  { koopaPos=(x,y),  koopaVel=(0,0), koopaDir=Types.Left, koopaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, koopaCollisions = [] })
-          toEntity (3, x, y) = Just (ECoin   0 Coin   { coinPos=(x,y),   coinColSpec=Just ColliderSpec { colliderWidth=0.6, colliderHeight=0.6, colliderOffset=(0,0) } })
-          toEntity _         = Nothing
-          entities' = mapMaybe toEntity spawns
-          entitiesWithIds = zipWith (\ix e -> setId e ix) [0..] entities'
+          entitiesWithIds = buildEntities spawns
       return GameState
         { world = worldState
         , player = initialPlayer
@@ -191,7 +176,18 @@ loadLevel path debugEnabled tileMap screenDims = do
             }
         , nextState = Types.NMenu
         , currentMapState = Nothing
+        , infiniteState = Nothing
         }
+
+loadSegmentWorld :: FilePath -> IO (World, [Entity])
+loadSegmentWorld path = do
+  bs <- BS.readFile path
+  case parseLevel bs of
+    Prelude.Left err -> ioError (userError ("Segment load error: " ++ err))
+    Prelude.Right (width, tiles1D, _, spawns) -> do
+      let worldState = makeWorldFromTiles width tiles1D
+          entitiesWithIds = buildEntities spawns
+      return (worldState, entitiesWithIds)
 
 -- Parser for the level format
 parseLevel :: BS.ByteString -> Either String (Int, [Tile], (Float,Float), [(Word8, Float, Float)])
@@ -294,3 +290,19 @@ parseLevel bs = do
           | otherwise = case tileFromId tid of
               Nothing -> Left "unknown tile id"
               Just t  -> Right (replicate n t)
+
+makeWorldFromTiles :: Int -> [Tile] -> World
+makeWorldFromTiles width tiles1D =
+  let height :: Int
+      height = if width == 0 then 0 else length tiles1D `div` width
+      grid' = [ take width (drop (y*width) tiles1D) | y <- [0..height - 1] ]
+      colliders = generateCollidersForWorld grid'
+  in World { grid = grid', colliders = colliders, slopes = [] }
+
+buildEntities :: [(Word8, Float, Float)] -> [Entity]
+buildEntities spawns = zipWith (\ix e -> setId e ix) [0..] (mapMaybe toEntity spawns)
+  where
+    toEntity (1, x, y) = Just (EGoomba 0 Goomba { goombaPos=(x,y), goombaVel=(0,0), goombaDir=Types.Left, goombaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, goombaOnGround=False, goombaCollisions = [], goombaMode = Types.GWalking })
+    toEntity (2, x, y) = Just (EKoopa  0 Koopa  { koopaPos=(x,y),  koopaVel=(0,0), koopaDir=Types.Left, koopaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, koopaCollisions = [] })
+    toEntity (3, x, y) = Just (ECoin   0 Coin   { coinPos=(x,y),   coinColSpec=Just ColliderSpec { colliderWidth=0.6, colliderHeight=0.6, colliderOffset=(0,0) } })
+    toEntity _         = Nothing

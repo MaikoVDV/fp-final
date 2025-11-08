@@ -2,6 +2,7 @@ module Model.Types where
 import Graphics.Gloss
 import qualified Data.Map as Map
 import Model.WorldMap (WorldMap, NodeId, EdgeId)
+import Model.InfiniteSegments (SegmentMeta)
 
 -- GameState
 data GameState = GameState
@@ -27,6 +28,7 @@ data GameState = GameState
   , menuState       :: MenuState
   , nextState       :: NextState
   , currentMapState :: Maybe MapState -- when level started from world map
+  , infiniteState   :: Maybe InfiniteRunState
   }
 
 data MenuPage = MainMenu | CustomLevels | BuilderSelect | BuilderName deriving (Eq, Show)
@@ -52,6 +54,18 @@ data NextState
   | NDeath
   | NMenu
   | NFinishLevel
+
+data InfiniteRunState = InfiniteRunState
+  { infSegments      :: [ActiveSegment]
+  , infSegmentPool   :: [SegmentMeta]
+  , infSegmentsAhead :: Int
+  } deriving (Eq, Show)
+
+data ActiveSegment = ActiveSegment
+  { activeMeta  :: SegmentMeta
+  , activeStartX :: Int
+  , activeWidth :: Int
+  } deriving (Eq, Show)
 
 -- Level geometry
 data World = World

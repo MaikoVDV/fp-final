@@ -7,22 +7,26 @@ import System.Exit (exitSuccess)
 import System.Directory (createDirectoryIfMissing, listDirectory, doesDirectoryExist, removeFile, doesFileExist)
 import System.FilePath (takeDirectory, takeFileName, dropExtension, (</>), (<.>))
 import Data.List (isPrefixOf)
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, mapMaybe)
 import Control.Monad (when)
 import Control.Exception (catch, SomeException)
-import Data.Aeson (encode, object, (.=))
+import Data.Aeson (encode)
 import qualified Data.ByteString.Lazy as BL
+import System.Random (randomRIO)
 
 import Model.Types
 import LevelCodec (saveLevel, loadLevel)
 import MathUtils
 import Model.InitialState
 import Model.World
+import Model.Collider (generateCollidersForWorld)
 import Assets
 import Model.Config (maxHealth, zoomStep, scaleFactor, jumpHoldDuration, jumpHoldAccelStart)
 import Model.Entity (defaultPlayer, defaultGoomba, defaultCoin)
 import Model.WorldMap (NodeId(..), adjacentDirected, nodeById, LevelRef(..), levelRef, edgeId)
 import Model.WorldMapCodec (loadWorldMapFile)
+import Model.InfiniteSegments (SegmentMeta(..), segmentsDirectory, segmentMetaSuffix, loadSegmentMetas)
+import Model.InfiniteWorld (ensureInfiniteSegments, segmentsAheadDefault)
 
 input :: Event -> AppState -> IO AppState
 -- Press 's' in build mode to save the current level
@@ -104,32 +108,30 @@ saveBuilderLevel path bs = do
         , menuState = MenuState { menuPlayerAnim = [], menuDebugMode = builderDebugMode bs, menuScreenSize = builderScreenSize bs, menuFocus = 0, menuPage = MainMenu, menuCustomFiles = [], menuInput = "" }
         , nextState = NMenu
         , currentMapState = Nothing
+        , infiniteState = Nothing
         }
   saveLevel path gs
 
-segmentsDirectory :: FilePath
-segmentsDirectory = "Infinite mode segments"
-
-segmentMetaSuffix :: String
-segmentMetaSuffix = ".segment.json"
-
 saveBuilderSegment :: BuilderState -> IO ()
 saveBuilderSegment bs =
-  case deriveSegmentHeights (builderWorld bs) of
+  case prepareSegmentSnapshot bs of
     Prelude.Left err -> putStrLn ("Unable to save infinite segment: " ++ err)
-    Prelude.Right (startHeight, endHeight) -> do
-      createDirectoryIfMissing True segmentsDirectory
-      (levelPath, metaPath, baseName) <- allocateSegmentPaths (builderSegmentBaseName bs)
-      saveBuilderLevel levelPath bs
-      let metaJson = object
-            [ "segmentName" .= baseName
-            , "levelPath"   .= levelPath
-            , "levelFile"   .= takeFileName levelPath
-            , "startHeight" .= startHeight
-            , "endHeight"   .= endHeight
-            ]
-      BL.writeFile metaPath (encode metaJson)
-      putStrLn ("Saved infinite segment \"" ++ baseName ++ "\" (" ++ show startHeight ++ " -> " ++ show endHeight ++ ")")
+    Prelude.Right snapshot ->
+      case deriveSegmentHeights (builderWorld snapshot) of
+        Prelude.Left err -> putStrLn ("Unable to save infinite segment: " ++ err)
+        Prelude.Right (startHeight, endHeight) -> do
+          createDirectoryIfMissing True segmentsDirectory
+          (levelPath, metaPath, baseName) <- allocateSegmentPaths (builderSegmentBaseName bs)
+          saveBuilderLevel levelPath snapshot
+          let meta = SegmentMeta
+                { segmentName = baseName
+                , levelPath   = levelPath
+                , levelFile   = takeFileName levelPath
+                , startHeight = startHeight
+                , endHeight   = endHeight
+                }
+          BL.writeFile metaPath (encode meta)
+          putStrLn ("Saved infinite segment \"" ++ baseName ++ "\" (" ++ show startHeight ++ " -> " ++ show endHeight ++ ")")
 
 deriveSegmentHeights :: World -> Either String (Int, Int)
 deriveSegmentHeights World { grid = rows }
@@ -161,6 +163,60 @@ isSolidTile :: Tile -> Bool
 isSolidTile Air = False
 isSolidTile _   = True
 
+trimWorldForSegment :: World -> Either String (World, Int, Int)
+trimWorldForSegment world@World { grid } =
+  let width = if null grid then 0 else length (head grid)
+      solidColumns = [ c | c <- [0 .. width - 1], columnHasSolid c ]
+  in case solidColumns of
+       [] -> Prelude.Left "level needs at least one solid tile touching the edges"
+       cols ->
+         let startCol = head cols
+             endCol = last cols
+             slice row = take (endCol - startCol + 1) (drop startCol row)
+             trimmedGrid = map slice grid
+             trimmedWorld = world { grid = trimmedGrid
+                                  , colliders = generateCollidersForWorld trimmedGrid
+                                  }
+         in Prelude.Right (trimmedWorld, startCol, endCol - startCol + 1)
+  where
+    columnHasSolid :: Int -> Bool
+    columnHasSolid idx =
+      any (\row -> idx < length row && isSolidTile (row !! idx)) grid
+
+shiftEntitiesAfterTrim :: Int -> Int -> [Entity] -> [Entity]
+shiftEntitiesAfterTrim leftTrim newWidth =
+  let dx = fromIntegral leftTrim
+      maxX = fromIntegral newWidth
+  in mapMaybe (shiftEntityIntoRange dx maxX)
+
+shiftEntityIntoRange :: Float -> Float -> Entity -> Maybe Entity
+shiftEntityIntoRange dx maxX entity =
+  case entity of
+    EGoomba eid g@Goomba { goombaPos = (x, y) } ->
+      let x' = x - dx in
+      if withinBounds x' maxX
+        then Just (EGoomba eid (g { goombaPos = (x', y) }))
+        else Nothing
+    EKoopa eid k@Koopa { koopaPos = (x, y) } ->
+      let x' = x - dx in
+      if withinBounds x' maxX
+        then Just (EKoopa eid (k { koopaPos = (x', y) }))
+        else Nothing
+    EPowerup eid p@Powerup { powerupPos = (x, y) } ->
+      let x' = x - dx in
+      if withinBounds x' maxX
+        then Just (EPowerup eid (p { powerupPos = (x', y) }))
+        else Nothing
+    ECoin eid c@Coin { coinPos = (x, y) } ->
+      let x' = x - dx in
+      if withinBounds x' maxX
+        then Just (ECoin eid (c { coinPos = (x', y) }))
+        else Nothing
+    _ -> Just entity
+
+withinBounds :: Float -> Float -> Bool
+withinBounds x maxX = x >= 0 && x < maxX
+
 builderSegmentBaseName :: BuilderState -> String
 builderSegmentBaseName bs =
   case builderFilePath bs >>= nonEmpty . dropExtension . takeFileName of
@@ -184,6 +240,12 @@ allocateSegmentPaths baseName = go 0
         then return (levelPath, metaPath, suffix)
         else go (n + 1)
 
+prepareSegmentSnapshot :: BuilderState -> Either String BuilderState
+prepareSegmentSnapshot bs = do
+  (trimmedWorld, leftTrim, newWidth) <- trimWorldForSegment (builderWorld bs)
+  let shiftedEntities = shiftEntitiesAfterTrim leftTrim newWidth (builderEntities bs)
+  return bs { builderWorld = trimmedWorld, builderEntities = shiftedEntities }
+
 handleMenuInput :: Event -> MenuState -> IO AppState
 handleMenuInput e ms@MenuState { menuFocus, menuPage } = case menuPage of
   MainMenu -> case e of
@@ -192,8 +254,8 @@ handleMenuInput e ms@MenuState { menuFocus, menuPage } = case menuPage of
     -- Keyboard focus navigation (W/S)
     EventKey (Char 'w') Down _ _ -> return . Menu $ ms { menuFocus = max 0 (menuFocus - 1) }
     EventKey (Char 'W') Down _ _ -> return . Menu $ ms { menuFocus = max 0 (menuFocus - 1) }
-    EventKey (Char 's') Down _ _ -> return . Menu $ ms { menuFocus = min 2 (menuFocus + 1) }
-    EventKey (Char 'S') Down _ _ -> return . Menu $ ms { menuFocus = min 2 (menuFocus + 1) }
+    EventKey (Char 's') Down _ _ -> return . Menu $ ms { menuFocus = min 3 (menuFocus + 1) }
+    EventKey (Char 'S') Down _ _ -> return . Menu $ ms { menuFocus = min 3 (menuFocus + 1) }
 
     -- Activate focused button
     EventKey (SpecialKey KeyEnter) Down _ _ ->
@@ -201,6 +263,7 @@ handleMenuInput e ms@MenuState { menuFocus, menuPage } = case menuPage of
         0 -> startWorldMap ms
         1 -> goBuilderSelect ms
         2 -> goCustomLevels ms
+        3 -> startInfiniteMode ms
         _ -> return (Menu ms)
 
     -- Mouse hover sets focus
@@ -215,6 +278,7 @@ handleMenuInput e ms@MenuState { menuFocus, menuPage } = case menuPage of
         Just 0 -> startWorldMap ms
         Just 1 -> goBuilderSelect ms
         Just 2 -> goCustomLevels ms
+        Just 3 -> startInfiniteMode ms
         _      -> return (Menu ms)
 
     _ -> return (Menu ms)
@@ -334,20 +398,22 @@ handleMenuInput e ms@MenuState { menuFocus, menuPage } = case menuPage of
     EventKey (SpecialKey KeyEsc) Down _ _ -> return . Menu $ ms { menuPage = BuilderSelect, menuFocus = 0 }
     _ -> return (Menu ms)
 
--- Main menu mouse focus: 3 buttons (0=Play,1=Builder,2=Custom Levels)
+-- Main menu mouse focus: 4 buttons (0=Play,1=Builder,2=Custom Levels,3=Infinite Mode)
 buttonFromMouseMain :: (Float, Float) -> Maybe Int
 buttonFromMouseMain (mx, my)
   | inside 0 = Just 0
   | inside 1 = Just 1
   | inside 2 = Just 2
+  | inside 3 = Just 3
   | otherwise = Nothing
   where
     btnW = 460 :: Float
     btnH = 90  :: Float
     btnY :: Int -> Float
-    btnY 0 = 100
-    btnY 1 = 0
-    btnY 2 = -100
+    btnY 0 = 150
+    btnY 1 = 50
+    btnY 2 = -50
+    btnY 3 = -150
     inside i = let cx = 0; cy = btnY i
                    dx = abs (mx - cx)
                    dy = abs (my - cy)
@@ -464,6 +530,40 @@ startCustomLevel ms path = do
   tileMap <- loadTileMap
   gs <- loadLevel path (menuDebugMode ms) tileMap (menuScreenSize ms)
   return (Playing gs)
+
+startInfiniteMode :: MenuState -> IO AppState
+startInfiniteMode ms@MenuState { menuDebugMode, menuScreenSize } = do
+  metas <- loadSegmentMetas
+  case metas of
+    [] -> do
+      putStrLn "No infinite-mode segments found. Save segments from the builder with 'p' in debug mode first."
+      return (Menu ms)
+    _ -> do
+      idx <- randomRIO (0, length metas - 1)
+      let firstMeta = metas !! idx
+      tileMap <- loadTileMap
+      gs <- loadLevel (levelPath firstMeta) menuDebugMode tileMap menuScreenSize
+      let width = case grid (world gs) of
+                    []    -> 0
+                    (r:_) -> length r
+      if width <= 0
+        then do
+          putStrLn ("Segment \"" ++ segmentName firstMeta ++ "\" is empty. Choose a different segment.")
+          return (Menu ms)
+        else do
+          let infState = InfiniteRunState
+                { infSegments = [ActiveSegment firstMeta 0 width]
+                , infSegmentPool = metas
+                , infSegmentsAhead = segmentsAheadDefault
+                }
+              seeded = gs
+                { menuState = ms
+                , currentMapState = Nothing
+                , nextState = NPlaying
+                , infiniteState = Just infState
+                }
+          gsReady <- ensureInfiniteSegments seeded
+          return (Playing gsReady)
 
 -- Start builder with an existing level loaded into the builder world
 startBuilderFromLevel :: MenuState -> FilePath -> IO AppState

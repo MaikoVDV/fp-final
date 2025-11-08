@@ -122,8 +122,8 @@ renderMenu MenuState { menuDebugMode, menuScreenSize, menuFocus, menuPage, menuC
         let titlePic = translate (-sw * 0.25) (sh * 0.23) $ color white $ scale titleScale titleScale $ text "FP Final"
             btnW = 460 :: Float
             btnH = 90  :: Float
-            ys   = [100, 0, -100] :: [Float]
-            labels = ["Play", "Builder", "Custom Levels"]
+            ys   = [150, 50, -50, -150] :: [Float]
+            labels = ["Play", "Builder", "Custom Levels", "Infinite Mode"]
             buttonsPic = Pictures
               [ buttonPic btnW btnH label (menuFocus == ix) y
               | (ix, (label, y)) <- zip [0..] (zip labels ys)
