@@ -279,3 +279,11 @@ data CollisionEvent = CollisionEvent
   , colEventAxis   :: Axis
   , colEventNormal :: Vector
   } deriving (Eq, Show)
+
+-- 
+data VisibleBounds = VisibleBounds
+  { vbMinX :: Float
+  , vbMaxX :: Float
+  , vbMinY :: Float
+  , vbMaxY :: Float
+  }

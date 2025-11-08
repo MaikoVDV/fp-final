@@ -4,7 +4,7 @@ import Graphics.Gloss
 import Graphics.Gloss.Interface.IO.Game
 
 import Model.Types
-import View
+import View.Main
 import Controller.Update
 import Controller.Input
 import Assets

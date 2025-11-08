@@ -11,12 +11,10 @@ common warnings
     ghc-options: -Wall
 
 executable final-project
-    -- Import common warning flags.
     import:           warnings
 
     main-is:          Main.hs
 
-    -- Modules included in this executable, other than Main.
     other-modules:
       Model.Types
       Model.Config
@@ -27,7 +25,18 @@ executable final-project
       Model.InfiniteSegments
       Model.InfiniteWorld
       Model.WorldMap
-      View
+      Model.WorldMapCodec
+      Model.Scores
+
+      View.Main
+      View.Game
+      View.GameUI
+      View.Entity
+      View.Helpers
+      View.Menu
+      View.WorldMap
+      View.Builder
+
       Controller.Update
       Controller.Input
       Controller.Collision
@@ -35,11 +44,6 @@ executable final-project
       MathUtils
       Assets
       LevelCodec
-      Model.WorldMapCodec
-      Model.Scores
-
-    -- LANGUAGE extensions used by modules in this package.
-    -- other-extensions:
 
     build-depends:    base ^>=4.18.3.0
                     , gloss
