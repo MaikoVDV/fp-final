@@ -34,10 +34,12 @@ loadAnimMap :: IO AnimMap
 loadAnimMap = do
   goombaAnim  <- loadGoombaAnimation
   powerupAnim <- loadPowerupAnimation
+  coinAnim    <- loadCoinAnimation
 
   return $ Map.fromList
     [ (TGoomba, goombaAnim)
     , (TPowerup, powerupAnim)
+    , (TCoin, coinAnim)
     ]
 
 loadPlayerAnimation :: IO [Animation]
@@ -66,3 +68,36 @@ loadPowerupAnimation :: IO Animation
 loadPowerupAnimation = sequence 
   [ loadBMP "assets/entities/burger.bmp"
   ]
+
+loadCoinAnimation :: IO Animation
+loadCoinAnimation = sequence
+  [ loadBMP "assets/tiles/coin_0.bmp"
+  , loadBMP "assets/tiles/coin_1.bmp"
+  ]
+
+-- UI assets
+loadHeartsUI :: IO (Picture, Picture, Picture)
+loadHeartsUI = do
+  full <- loadBMP "assets/ui/Hearts/Hearth_Full.bmp"
+  half <- loadBMP "assets/ui/Hearts/Hearth_Half.bmp"
+  empty <- loadBMP "assets/ui/Hearts/Hearth_Empty.bmp"
+  return (full, half, empty)
+
+loadCountersUI :: IO (Map.Map Char Picture)
+loadCountersUI = do
+  zero <- loadBMP "assets/ui/Counters/0.bmp"
+  one  <- loadBMP "assets/ui/Counters/1.bmp"
+  two  <- loadBMP "assets/ui/Counters/2.bmp"
+  three<- loadBMP "assets/ui/Counters/3.bmp"
+  four <- loadBMP "assets/ui/Counters/4.bmp"
+  five <- loadBMP "assets/ui/Counters/5.bmp"
+  six  <- loadBMP "assets/ui/Counters/6.bmp"
+  seven<- loadBMP "assets/ui/Counters/7.bmp"
+  eight<- loadBMP "assets/ui/Counters/8.bmp"
+  nine <- loadBMP "assets/ui/Counters/9.bmp"
+  xpic <- loadBMP "assets/ui/Counters/x.bmp"
+  return $ Map.fromList
+    [ ('0', zero), ('1', one), ('2', two), ('3', three), ('4', four)
+    , ('5', five), ('6', six), ('7', seven), ('8', eight), ('9', nine)
+    , ('x', xpic)
+    ]

@@ -34,6 +34,7 @@ executable final-project
       Assets
       LevelCodec
       Model.WorldMapCodec
+      Model.Scores
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -45,6 +46,7 @@ executable final-project
                     , directory
                     , filepath
                     , aeson
+                    , aeson-pretty
                     , text
                     , vector
 

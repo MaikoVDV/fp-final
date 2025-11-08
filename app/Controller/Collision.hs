@@ -6,13 +6,13 @@ import Model.World
 import Model.Entity
 import Data.List (foldl')
 import Model.Collider
-import Model.Config (stompBounceVelocity, stompJumpWindow)
+import Model.Config (stompBounceVelocity, stompJumpWindow, goombaShellDuration, goombaContactDamage)
 
 
 handleCollisionEvents :: GameState -> GameState
 handleCollisionEvents gs =
   let gs'   = handlePlayerCollisions gs
-      gs''  = handlePowerupCollisions gs'
+      gs''  = handleCollectibleCollisions gs'
       gs''' = handleEnemyCollisions gs''
   in gs'''
 
@@ -28,20 +28,25 @@ handlePlayerCollisions gameState@GameState { player } =
           --case trace ("Collided with entity (id: " ++ show eId ++ ")") getEntity gs eId of
             Nothing -> gs
             Just entity -> case entity of
-              (EGoomba _ _) ->
-                if colEventAxis == AxisY && snd colEventNormal > 0 -- check if player jumped on top of goomba
+              (EGoomba _ g) ->
+                if colEventAxis == AxisY && snd colEventNormal > 0 -- player came from above
                   then
-                    -- Player touched goomba from top: kill goomba and bounce player up
-                    let gsKilled = killEntity gs eId
-                        p0 = Types.player gsKilled
+                    let p0 = Types.player gs
                         (vx, _) = playerVel p0
                         p' = p0 { playerVel = (vx, stompBounceVelocity), onGround = False, stompJumpTimeLeft = stompJumpWindow }
-                    in gsKilled { player = p' }
+                    in case goombaMode g of
+                        GWalking ->
+                          -- First stomp: enter shell mode and stop moving
+                          let gsShelled = updateGoombaById gs eId (\go -> go { goombaMode = GShelled goombaShellDuration
+                                                                            , goombaVel = (0, snd (goombaVel go)) })
+                          in gsShelled { player = p' }
+                        GShelled _ ->
+                          -- Second stomp while shelled: kill it
+                          let gsKilled = killEntity gs eId
+                          in gsKilled { player = p' }
                   else
-                    -- Player touched goomba from side/bottom, take damage
-                    let 
-                      removeEntity gs' = killEntity gs' eId
-                    in removeEntity $ damagePlayer gs
+                    -- Side/bottom touch: damage player (if not invulnerable)
+                    damagePlayerN goombaContactDamage gs
               (EPowerup _ _) -> 
                 healPlayer $ killEntity gs eId
               _            -> gs
@@ -71,19 +76,26 @@ handlePlayerCollisions gameState@GameState { player } =
 
 -- Handle entity-side collision outcomes that the player handler doesn't catch
 -- Specifically: allow powerups to be collected when they move into the player
-handlePowerupCollisions :: GameState -> GameState
-handlePowerupCollisions gs@GameState { entities, player = p } =
+handleCollectibleCollisions :: GameState -> GameState
+handleCollectibleCollisions gs@GameState { entities, player = p } =
   foldl' step gs entities
   where
     step acc e = case e of
       EPowerup eId pu ->
         let touchedPlayerEvent = any isPlayerEvent (powerupCollisions pu)
-            overlapWithPlayer  = overlapsPlayer acc eId pu
+            overlapWithPlayer  = overlapsPowerupPlayer acc eId pu
             shouldCollect      = touchedPlayerEvent || overlapWithPlayer
         in if shouldCollect
             then case getEntity acc eId of
                   Nothing -> acc
                   Just _  -> healPlayer (killEntity acc eId)
+            else acc
+      ECoin eId c ->
+        let overlap = overlapsCoinPlayer acc eId c
+        in if overlap
+            then case getEntity acc eId of
+                  Nothing -> acc
+                  Just _  -> killEntity acc eId
             else acc
       _ -> acc
 
@@ -92,9 +104,15 @@ handlePowerupCollisions gs@GameState { entities, player = p } =
       CTPlayer _ -> True
       _          -> False
 
-    overlapsPlayer :: GameState -> Int -> Powerup -> Bool
-    overlapsPlayer st puId pu =
+    overlapsPowerupPlayer :: GameState -> Int -> Powerup -> Bool
+    overlapsPowerupPlayer st puId pu =
       case (playerCollider (player st), powerupCollider puId pu) of
+        (Just pc, Just ec) -> collides pc ec
+        _                  -> False
+
+    overlapsCoinPlayer :: GameState -> Int -> Coin -> Bool
+    overlapsCoinPlayer st cId c =
+      case (playerCollider (player st), coinCollider cId c) of
         (Just pc, Just ec) -> collides pc ec
         _                  -> False
 
@@ -104,42 +122,47 @@ handlePowerupCollisions gs@GameState { entities, player = p } =
 --  - Otherwise: damage player and remove the enemy
 handleEnemyCollisions :: GameState -> GameState
 handleEnemyCollisions gs@GameState { entities } =
-  foldl' step gs entities
+  case playerCollider (player gs) of
+    Nothing -> gs
+    Just pc -> foldl' (overlapStep pc) gs entities
   where
-    step acc e = case e of
+    overlapStep :: Collider -> GameState -> Entity -> GameState
+    overlapStep pc acc e = case e of
       EGoomba eId g ->
-        resolveEnemyVsPlayer acc eId (goombaCollisions g)
+        case (goombaCollider eId g) of
+          Just ec | collides pc ec ->
+            let stomp = isStomp acc g in applyGoombaHit acc eId g stomp
+          _ -> acc
       EKoopa eId k ->
-        resolveEnemyVsPlayer acc eId (koopaCollisions k)
+        case (koopaCollider eId k) of
+          Just ec | collides pc ec -> damagePlayerN goombaContactDamage acc
+          _ -> acc
       _ -> acc
 
-    resolveEnemyVsPlayer :: GameState -> Int -> [CollisionEvent] -> GameState
-    resolveEnemyVsPlayer acc eId evs =
-      case findPlayerEvent evs of
+    isStomp :: GameState -> Goomba -> Bool
+    isStomp st g =
+      let (_, py) = playerPos (player st)
+          (_, gy) = goombaPos g
+          (_, pvy) = playerVel (player st)
+      in py > gy && pvy < 0
+
+    applyGoombaHit :: GameState -> Int -> Goomba -> Bool -> GameState
+    applyGoombaHit acc eId g stomp =
+      case getEntity acc eId of
         Nothing -> acc
-        Just ev ->
-          let stomp = isStompOnEnemy ev
-          in case getEntity acc eId of
-              Nothing -> acc
-              Just _  -> if stomp
-                          then let accBounce =
-                                       let p0 = Types.player acc
-                                           (vx, _) = playerVel p0
-                                           p' = p0 { playerVel = (vx, stompBounceVelocity), onGround = False, stompJumpTimeLeft = stompJumpWindow }
-                                       in acc { player = p' }
-                               in killEntity accBounce eId
-                          else let acc' = damagePlayer acc
-                               in killEntity acc' eId
-
-    findPlayerEvent :: [CollisionEvent] -> Maybe CollisionEvent
-    findPlayerEvent = foldl' (\m ev -> case m of { Just _ -> m; Nothing -> if touchesPlayer ev then Just ev else Nothing }) Nothing
-
-    touchesPlayer :: CollisionEvent -> Bool
-    touchesPlayer CollisionEvent { colEventTag } = case colEventTag of
-      CTPlayer _ -> True
-      _          -> False
-
-    -- From enemy's perspective: AxisY with normal.y < 0 means the player is above
-    isStompOnEnemy :: CollisionEvent -> Bool
-    isStompOnEnemy CollisionEvent { colEventAxis, colEventNormal = (_, ny) } =
-      colEventAxis == AxisY && ny < 0
+        Just (EGoomba _ _) ->
+          if stomp
+            then
+              let p0 = Types.player acc
+                  (vx, _) = playerVel p0
+                  p' = p0 { playerVel = (vx, stompBounceVelocity), onGround = False, stompJumpTimeLeft = stompJumpWindow }
+              in case goombaMode g of
+                   GWalking ->
+                     let accShelled = updateGoombaById acc eId (\go -> go { goombaMode = GShelled goombaShellDuration
+                                                                         , goombaVel = (0, snd (goombaVel go)) })
+                     in accShelled { player = p' }
+                   GShelled _ ->
+                     let accBounce = acc { player = p' }
+                     in killEntity accBounce eId
+            else damagePlayerN goombaContactDamage acc
+        _ -> acc

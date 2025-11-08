@@ -6,10 +6,12 @@ module Model.WorldMapCodec
   ) where
 
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Lazy.Char8 as BL8
 import Data.Aeson
 import Data.Aeson.Types (Parser)
 import qualified Data.Text as T
 import Control.Applicative ((<|>))
+import Data.Aeson.Encode.Pretty (encodePretty', defConfig, confIndent, Indent(..))
 
 import Model.WorldMap
 
@@ -118,5 +120,28 @@ instance FromJSON WorldMap where
 loadWorldMapFile :: FilePath -> IO (Either String WorldMap)
 loadWorldMapFile fp = eitherDecode <$> BL.readFile fp
 
+-- Save with a compact, human-friendly layout:
+-- - Top-level object pretty
+-- - Each node/edge serialized as single-line JSON
+-- - Arrays are line-broken with one element per line
 saveWorldMapFile :: FilePath -> WorldMap -> IO ()
-saveWorldMapFile fp wm = BL.writeFile fp (encode wm)
+saveWorldMapFile fp wm = BL.writeFile fp (renderOneLineArrays wm)
+
+renderOneLineArrays :: WorldMap -> BL.ByteString
+renderOneLineArrays wm =
+  let oneLine a = encode a  -- Aeson encodes compact single-line JSON
+      nl = BL8.pack "\n"
+      indent n = BL8.pack (replicate n ' ')
+      joinWith sep = BL.intercalate sep
+      nodesLines = [ indent 4 <> oneLine n | n <- nodes wm ]
+      edgesLines = [ indent 4 <> oneLine e | e <- edges wm ]
+  in mconcat
+      [ BL8.pack "{\n"
+      , indent 2, BL8.pack "\"nodes\": [\n"
+      , joinWith (BL8.pack ",\n") nodesLines, nl
+      , indent 2, BL8.pack "],\n"
+      , indent 2, BL8.pack "\"edges\": [\n"
+      , joinWith (BL8.pack ",\n") edgesLines, nl
+      , indent 2, BL8.pack "]\n"
+      , BL8.pack "}\n"
+      ]

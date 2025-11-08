@@ -5,6 +5,8 @@ import qualified Model.Types as Types
 import Model.Collider
 import Assets 
 import Model.Entity (defaultGoomba, defaultPlayer)
+import Model.Scores (loadLives)
+import qualified Data.Map as Map
 
 targetTilesHorizontal :: Float
 targetTilesHorizontal = 20
@@ -22,6 +24,9 @@ buildInitialGameState ms@MenuState { menuDebugMode, menuScreenSize } = do
     tileMap         <- loadTileMap
     animMap         <- loadAnimMap
     playerAnimation <- loadPlayerAnimation
+    (heartFull, heartHalf, heartEmpty) <- loadHeartsUI
+    counters <- loadCountersUI
+    lives <- loadLives
     let initialPlayer = defaultPlayer {
       playerPos = (1, -12),
       playerAnim = playerAnimation
@@ -62,6 +67,11 @@ buildInitialGameState ms@MenuState { menuDebugMode, menuScreenSize } = do
       , player = initialPlayer
       , entities = [goomba0, goomba1]
       , entityIdCounter = 2
+      , uiHeartFull = heartFull
+      , uiHeartHalf = heartHalf
+      , uiHeartEmpty = heartEmpty
+      , uiCounters = counters
+      , playerLives = lives
       , tileZoom = 1.0
       , screenSize = menuScreenSize
       , tileMap = tileMap

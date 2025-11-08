@@ -15,8 +15,9 @@ import Model.InitialState
 import Model.Config
 import Model.World
 import Assets
+import Model.Config (maxHealth)
 import qualified Data.Map as Map
-import Model.Entity (defaultPlayer, defaultGoomba)
+import Model.Entity (defaultPlayer, defaultGoomba, defaultCoin)
 import Model.WorldMap (exampleWorldMap, NodeId(..), adjacentDirected, Edge(..), nodeById, LevelRef(..), MapNode(..))
 import LevelCodec (loadLevel)
 import Model.WorldMapCodec (loadWorldMapFile)
@@ -72,13 +73,21 @@ input e appState =
 saveBuilderLevel :: FilePath -> BuilderState -> IO ()
 saveBuilderLevel path bs = do
   let w = builderWorld bs
-      gs = GameState
+  -- Load minimal UI assets for type completeness (not used by saver)
+  hearts <- loadHeartsUI
+  counters <- loadCountersUI
+  let gs = GameState
         { world = w
-        , player = defaultPlayer
+        , player = defaultPlayer { health = maxHealth }
         , entities = builderEntities bs
         , entityIdCounter = 0
         , tileMap = builderTileMap bs
         , animMap = builderAnimMap bs
+        , uiHeartFull = let (a,_,_) = hearts in a
+        , uiHeartHalf = let (_,b,_) = hearts in b
+        , uiHeartEmpty = let (_,_,c) = hearts in c
+        , uiCounters = counters
+        , playerLives = 0
         , tileZoom = builderTileZoom bs
         , screenSize = builderScreenSize bs
         , frameCount = 0
@@ -570,6 +579,7 @@ handleBuildingInput (EventKey (MouseButton LeftButton) Down _ (mx, my)) bs@Build
     Just (SelTile tile) -> bs { builderBrush = tile, builderBrushMode = BrushNormal, builderLMBHeld = False, builderLastPaint = Nothing }
     Just (SelTool mode) -> bs { builderBrushMode = mode, builderLMBHeld = False, builderLastPaint = Nothing }
     Just (SelEnemy EnemyGoomba) -> bs { builderEnemySel = EnemyGoomba, builderLMBHeld = False, builderLastPaint = Nothing }
+    Just (SelEnemy EnemyCoin)   -> bs { builderEnemySel = EnemyCoin,   builderLMBHeld = False, builderLastPaint = Nothing }
     Just (SelEnemy EnemyEraser) -> bs { builderEnemySel = EnemyEraser, builderLMBHeld = False, builderLastPaint = Nothing }
     Nothing   -> let bs' = bs { builderLMBHeld = True }
                  in paintAtMouse mx my bs'
@@ -611,6 +621,7 @@ paintAtMouse mx my bs@BuilderState { builderWorld = w, builderScreenSize, builde
                      cellOf (x', y') = (floor x', floor (-y'))
                      isAtCell e = case e of
                        EGoomba _ Goomba { goombaPos = p } -> cellOf p == (cx, cy)
+                       ECoin   _ Coin   { coinPos   = p } -> cellOf p == (cx, cy)
                        _ -> False
                      existsHere = any isAtCell builderEntities
                      ents' = case builderEnemySel of
@@ -618,6 +629,9 @@ paintAtMouse mx my bs@BuilderState { builderWorld = w, builderScreenSize, builde
                                EnemyGoomba -> if existsHere
                                                 then filter (not . isAtCell) builderEntities
                                                 else (EGoomba 0 defaultGoomba { goombaPos=(cxWorld, cyWorld) } : builderEntities)
+                               EnemyCoin   -> if existsHere
+                                                then filter (not . isAtCell) builderEntities
+                                                else (ECoin  0 defaultCoin  { coinPos=(cxWorld, cyWorld) } : builderEntities)
                  in bs { builderWorld = wExpanded
                        , builderEntities = ents'
                        , builderLastPaint = Just (cx, cy)
@@ -714,13 +728,14 @@ paletteHit (screenW, screenH) currentTab (mx, my) =
               PTile t        -> Just (SelTile t)
               PSpecial sb    -> Just (SelTool (specialToMode sb))
               PEnemyGoomba   -> Just (SelEnemy EnemyGoomba)
+              PEnemyCoin     -> Just (SelEnemy EnemyCoin)
               PEnemyEraser   -> Just (SelEnemy EnemyEraser)
         | otherwise -> Nothing
 
 -- Palette tiles in desired order (excluding Air)
 data SpecialBrush = GrassColumn | Eraser
 
-data PaletteItem = PTile Tile | PSpecial SpecialBrush | PEnemyGoomba | PEnemyEraser
+data PaletteItem = PTile Tile | PSpecial SpecialBrush | PEnemyGoomba | PEnemyCoin | PEnemyEraser
 
 specialToMode :: SpecialBrush -> BrushMode
 specialToMode GrassColumn = BrushGrassColumn
@@ -744,6 +759,7 @@ paletteItemsEnemies :: [PaletteItem]
 paletteItemsEnemies =
   [ PEnemyEraser
   , PEnemyGoomba
+  , PEnemyCoin
   ]
 
 

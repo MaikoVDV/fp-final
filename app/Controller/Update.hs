@@ -13,8 +13,10 @@ import Controller.Collision
 import Controller.Movement
 
 import MathUtils
-import Model.WorldMap (polylineLength, Edge(..), WorldMap(..), MapNode(..), EdgeDir(..), NodeState(..), NodeType(..))
+import Model.WorldMap (polylineLength, Edge(..), WorldMap(..), MapNode(..), EdgeDir(..), NodeState(..), NodeType(..), NodeId(..))
 import Model.WorldMapCodec (saveWorldMapFile)
+
+import Model.Scores (saveLives)
 
 update :: Float -> AppState -> IO AppState
 update _  menuState@(Menu _) = return menuState
@@ -31,15 +33,51 @@ update dt (Playing gs)
         _            -> return (Menu $ menuState gs)
   | otherwise =
       let gs' = updateGame dt gs
-      in case nextState gs' of
-        NPlaying     -> return . Playing $ gs'
-        NFinishLevel -> case currentMapState gs' of
-                          Just ms -> do
-                            let ms' = unlockAfterFinish ms
-                            saveWorldMapFile (wmFilePath ms') (wmWorldMap ms')
-                            return (WorldMapScreen ms')
-                          Nothing -> return (Menu $ menuState gs')
-        _            -> return (Menu $ menuState gs')
+      in do
+        -- Persist lives if changed
+        let l0 = playerLives gs
+            l1 = playerLives gs'
+        if l1 /= l0 then saveLives l1 else return ()
+        -- If died with no lives left: restore 5 lives and reset world progress unless boss defeated
+        gs'' <- case nextState gs' of
+                  NDeath | playerLives gs' <= 0 -> do
+                    let newLives = 5
+                    saveLives newLives
+                    case currentMapState gs' of
+                      Just ms -> do
+                        let wm = wmWorldMap ms
+                            bossCompleted = any (\n -> nodeType n == Boss && nodeState n == Completed) (nodes wm)
+                        if not bossCompleted
+                          then do
+                            -- Reset nodes to Locked, keep start node (id 0) Unlocked; reset edges; unlock edges from start
+                            let startId = NodeId 0
+                                resetNode n = if nodeId n == startId then n { nodeState = Unlocked }
+                                              else n { nodeState = Locked }
+                                allowsFrom e nid = case dir e of
+                                  Undirected -> a e == nid || b e == nid
+                                  Both       -> a e == nid || b e == nid
+                                  AtoB       -> a e == nid
+                                  BtoA       -> b e == nid
+                                edges0 = [ e { unlocked = False } | e <- edges wm ]
+                                edges1 = [ if allowsFrom e startId then e { unlocked = True } else e | e <- edges0 ]
+                                wm' = wm { nodes = map resetNode (nodes wm), edges = edges1 }
+                            saveWorldMapFile (wmFilePath ms) wm'
+                          else return ()
+                        return gs' { playerLives = newLives }
+                      Nothing -> return gs' { playerLives = newLives }
+                  _ -> return gs'
+        case nextState gs'' of
+          NPlaying     -> return . Playing $ gs''
+          NFinishLevel -> case currentMapState gs'' of
+                            Just ms -> do
+                              let ms' = unlockAfterFinish ms
+                              saveWorldMapFile (wmFilePath ms') (wmWorldMap ms')
+                              return (WorldMapScreen ms')
+                            Nothing -> return (Menu $ menuState gs'')
+          NDeath       -> case currentMapState gs'' of
+                            Just ms -> return (WorldMapScreen ms)
+                            Nothing -> return (Menu $ menuState gs'')
+          _            -> return (Menu $ menuState gs'')
 update _ (Building bs)      = return (Building bs)
 update dt (WorldMapScreen ms) = return (WorldMapScreen (updateMap dt ms))
 
@@ -121,6 +159,7 @@ updateGame dt =
 updatePlayer :: Float -> GameState -> GameState
 updatePlayer dt gs =
   let p = player gs
+      -- Phase-through enemies: only world blocks the player
       blockers = colliders (world gs) ++ blockingEntityColliders (entities gs)
       (jumpAccel, jumpTimer) = computeJumpHold dt gs p
       movedPlayer = applyMovement dt blockers gs jumpAccel p
@@ -144,11 +183,13 @@ updatePlayer dt gs =
         | otherwise            = jumpsLeft movedPlayer
       -- Countdown stomp jump boost timer
       stompBoostTimeLeft = max 0 (stompJumpTimeLeft movedPlayer - dt)
+      inv' = max 0 (invulnTimeLeft movedPlayer - dt)
       playerAfterHold = movedPlayer
         { playerJumpTime = jumpTime'
         , playerJumpDir  = jumpDir'
         , stompJumpTimeLeft = stompBoostTimeLeft
         , playerAnimClock = animClock'
+        , invulnTimeLeft = inv'
         }
       -- Allow jump if we have jumps left (double/triple jump)
       canJump = pendingJump gs && jumpsAvailable > 0
@@ -186,10 +227,12 @@ updatePlayer dt gs =
       where
         isBlocking :: Entity -> Bool
         isBlocking e = case e of
-          EGoomba  _ _ -> True
-          EKoopa   _ _ -> True
+          -- Enemies do not block the player
+          EGoomba  _ _ -> False
+          EKoopa   _ _ -> False
           EPlatform _   -> True
           EPowerup _ _ -> False
+          ECoin    _ _ -> False
 
 
 updateEntities :: Float -> GameState -> GameState
@@ -199,7 +242,8 @@ updateEntity :: Float -> GameState -> Entity -> Entity
 updateEntity dt gs (EGoomba  gId  g)  = EGoomba  gId  (updateGoomba  dt gs gId  g)
 updateEntity _  _  (EKoopa   kId  k)  = EKoopa   kId  k
 updateEntity dt gs (EPowerup puId pu) = EPowerup puId (updatePowerup dt gs puId pu)
-updateEntity _  _  e             = e
+updateEntity _  _  (ECoin    cId  c)  = ECoin    cId  c
+updateEntity _  _  e                   = e
 
 updateGoomba :: Float -> GameState -> Int -> Goomba -> Goomba
 updateGoomba dt gs gId g@Goomba
@@ -207,21 +251,24 @@ updateGoomba dt gs gId g@Goomba
   , goombaVel = vel
   , goombaColSpec = colSpec
   , goombaDir = dir
+  , goombaMode = mode
   } =
   case colSpec of
     Nothing ->
       let velAfterAccel = addVec vel (scaleVec totalAccel dt)
           velLimited    = clampGoombaVelocity velAfterAccel
           newPos        = addVecToPoint pos (scaleVec velLimited dt)
+          (mode', velFinal) = advanceMode mode velLimited
       in g { goombaPos = newPos
-           , goombaVel = velLimited
+           , goombaVel = velFinal
+           , goombaMode = mode'
            }
     Just spec ->
       let velAfterAccel   = addVec vel (scaleVec totalAccel dt)
           displacement    = scaleVec velAfterAccel dt
           -- Only block against world and player; enemy separation handled globally
+          -- Phase-through player: only world blocks the goomba
           blockers        = colliders (world gs)
-                             ++ maybeToList (playerCollider (player gs))
           collider        = specToCollider pos (CTEntity gId) spec
           (resolvedPos, flags, events) = resolveMovement collider pos displacement blockers
           velAfterCollision    = applyCollisionFlags flags velAfterAccel
@@ -235,19 +282,23 @@ updateGoomba dt gs gId g@Goomba
             in any (collides probeCollider) blockers
           hitWall              = wallAheadProbe
           newDirBase           = if hitWall then flipDir dir else dir
-          newDir               = newDirBase
-          adjVx                = if hitWall then 0 else fst velLimited
-          velFinal             = (adjVx, snd velLimited)
+          newDir               = if isWalking then newDirBase else dir
+          adjVxWalk            = if hitWall then 0 else fst velLimited
+          vxMode               = if isWalking then adjVxWalk else 0
+          velFinal0            = (vxMode, snd velLimited)
+          (mode', velFinal)    = advanceMode mode velFinal0
       in g { goombaPos        = resolvedPos
            , goombaVel        = velFinal
            , goombaDir        = newDir
            , goombaOnGround   = groundContact flags
            , goombaCollisions = events
+           , goombaMode       = mode'
            }
   where
     gravityAccel  = (0, gravityAcceleration)
     dirSign       = case dir of { Types.Left -> -1.0; Types.Right -> 1.0 }
-    goombaAccel   = (dirSign * goombaMoveAccel, 0)
+    isWalking     = case mode of { GWalking -> True; _ -> False }
+    goombaAccel   = if isWalking then (dirSign * goombaMoveAccel, 0) else (0, 0)
     airDrag       = (- (airFrictionCoeff * fst vel), 0)
     totalAccel    = gravityAccel `addVec` goombaAccel `addVec` airDrag
     clampGoombaVelocity (vx, vy) =
@@ -255,6 +306,13 @@ updateGoomba dt gs gId g@Goomba
       in (vx', vy)
     flipDir Types.Left  = Types.Right
     flipDir Types.Right = Types.Left
+    -- Advance shelled timer and ensure x-velocity is 0 while shelled
+    advanceMode m (vx, vy) = case m of
+      GWalking      -> (GWalking, (vx, vy))
+      GShelled ttl  -> let ttl' = max 0 (ttl - dt)
+                       in if ttl' <= 0
+                            then (GWalking, (0, vy))
+                            else (GShelled ttl', (0, vy))
 
     -- Enemy-vs-enemy separation handled in resolveInterEnemyOverlaps
 updatePowerup :: Float -> GameState -> Int -> Powerup -> Powerup
@@ -275,7 +333,8 @@ updatePowerup dt gs puId pu@Powerup
     Just spec ->
       let velAfterAccel   = addVec vel (scaleVec totalAccel dt)
           displacement    = scaleVec velAfterAccel dt
-          blockers        = colliders (world gs) ++ maybeToList (playerCollider (player gs))
+          -- Phase-through player: only world blocks the powerup
+          blockers        = colliders (world gs)
           collider        = specToCollider pos (CTEntity puId) spec
           (resolvedPos, flags, events) = resolveMovement collider pos displacement blockers
           velAfterCollision    = applyCollisionFlags flags velAfterAccel

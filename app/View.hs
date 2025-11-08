@@ -241,6 +241,7 @@ renderBuilderPalette BuilderState { builderScreenSize = (screenW, screenH), buil
                           GrassColumn -> builderBrushMode == BrushGrassColumn
                           Eraser      -> builderBrushMode == BrushEraser
         PEnemyGoomba -> builderPaletteTab == TabEnemies && builderEnemySel == EnemyGoomba
+        PEnemyCoin   -> builderPaletteTab == TabEnemies && builderEnemySel == EnemyCoin
         PEnemyEraser -> builderPaletteTab == TabEnemies && builderEnemySel == EnemyEraser
       drawItem (i, item) =
         let c = i `div` rows
@@ -265,6 +266,9 @@ renderBuilderPalette BuilderState { builderScreenSize = (screenW, screenH), buil
               PEnemyGoomba ->
                 let anim = getEntityAnim animMap TGoomba
                 in scaleTo iconSize (head anim)
+              PEnemyCoin ->
+                let anim = getEntityAnim animMap TCoin
+                in scaleTo iconSize (head anim)
               PEnemyEraser ->
                 let half = iconSize / 2 * 0.8
                     border = color black (lineLoop [(-half,-half),(half,-half),(half,half),(-half,half)])
@@ -276,7 +280,7 @@ renderBuilderPalette BuilderState { builderScreenSize = (screenW, screenH), buil
 -- Keep the palette order in sync with Input
 data SpecialBrush = GrassColumn | Eraser
 
-data PaletteItem = PTile Tile | PSpecial SpecialBrush | PEnemyGoomba | PEnemyEraser
+data PaletteItem = PTile Tile | PSpecial SpecialBrush | PEnemyGoomba | PEnemyCoin | PEnemyEraser
 
 paletteItemsBlocks :: [PaletteItem]
 paletteItemsBlocks =
@@ -295,7 +299,8 @@ paletteItemsBlocks =
 paletteItemsEnemies :: [PaletteItem]
 paletteItemsEnemies =
   [ PEnemyEraser
-  , PEnemyGoomba ]
+  , PEnemyGoomba
+  , PEnemyCoin ]
 
 renderBuilderEntities :: Float -> AnimMap -> [Entity] -> Picture
 renderBuilderEntities tilePixels animMap ents =
@@ -376,6 +381,11 @@ renderBuilderPreview tilePixels BuilderState { builderWorld = world
                      sprite = withTileScale tilePixels (head anim)
                  in translate (xWorld * tilePixels) (yWorld * tilePixels)
                       (color (makeColor 1 1 1 0.85) sprite)
+               EnemyCoin ->
+                 let anim = getEntityAnim animMap TCoin
+                     sprite = withTileScale tilePixels (head anim)
+                 in translate (xWorld * tilePixels) (yWorld * tilePixels)
+                      (color (makeColor 1 1 1 0.85) sprite)
                EnemyEraser -> blank
 
 renderBuilderWorld :: Float -> World -> TileMap -> Bool -> Picture
@@ -440,25 +450,41 @@ renderEntities :: Float -> GameState -> Picture
 renderEntities tilePixels GameState { entities, animMap, frameCount } = Pictures $ map (renderEntity tilePixels animMap frameCount) entities
 
 renderEntity :: Float -> AnimMap -> Int -> Entity -> Picture
-renderEntity tPx m fCtx (EGoomba   _ Goomba { goombaPos, goombaDir })   = renderEntity' tPx (getEntityAnim m TGoomba)  fCtx goombaPos  goombaDir
+renderEntity tPx m fCtx (EGoomba   _ Goomba { goombaPos, goombaDir, goombaMode })   =
+  let anim = getEntityAnim m TGoomba
+  in renderGoomba tPx anim fCtx goombaPos goombaDir goombaMode
 renderEntity tPx m fCtx (EKoopa    _ Koopa { koopaPos, koopaDir })      = renderEntity' tPx (getEntityAnim m TKoopa)   fCtx koopaPos   koopaDir
 renderEntity tPx m fCtx (EPowerup  _ Powerup{ powerupPos, powerupDir }) = renderEntity' tPx (getEntityAnim m TPowerup) fCtx powerupPos powerupDir
+renderEntity tPx m fCtx (ECoin     _ Coin  { coinPos })                 = renderEntity' tPx (getEntityAnim m TCoin)    fCtx coinPos    Types.Left
 renderEntity _   _ _    (EPlatform _)                                   = blank
 
 renderEntity' :: Float -> Animation -> Int -> Point -> MoveDir -> Picture
 renderEntity' tPx anim fCtx (x, y) dir = 
   let  
     spriteIdx = (fCtx `div` frameTime) `mod` length anim
-    sprite = anim !! spriteIdx -- dit klopt nog niet helemaal met animaties enz
+    sprite = anim !! spriteIdx
     spriteScaled = withTileScale tPx sprite
     spriteFlipped = scale (dirToPictureScaleX dir) 1 spriteScaled
   in translate (x * tPx) (y * tPx) spriteFlipped 
+
+-- Goomba: walk cycles first N-1 frames; shelled shows last frame
+renderGoomba :: Float -> Animation -> Int -> Point -> MoveDir -> GoombaMode -> Picture
+renderGoomba tPx anim fCtx (x, y) dir mode =
+  let n = length anim
+      idx = case mode of
+        GShelled _ -> max 0 (n - 1)
+        GWalking   -> let k = max 1 (n - 1)
+                      in (fCtx `div` frameTime) `mod` k
+      sprite = anim !! (min (n - 1) idx)
+      spriteScaled = withTileScale tPx sprite
+      spriteFlipped = scale (dirToPictureScaleX dir) 1 spriteScaled
+  in translate (x * tPx) (y * tPx) spriteFlipped
 
 getEntityAnim :: AnimMap -> EntityType -> Animation
 getEntityAnim m t = Map.findWithDefault [blank] t m
 
 renderPlayer :: Float -> Player -> Int -> Picture
-renderPlayer tilePixels p@Player { playerPos = (x, y), health, playerAnim = anims, lastMoveDir } fCtx = 
+renderPlayer tilePixels p@Player { playerPos = (x, y), health, playerAnim = anims, lastMoveDir, invulnTimeLeft } fCtx = 
   let 
     moveDir = if lastMoveDir == -1 then 1 else -1
     anim = anims !! clamp (0, length anims - 1) (health - 1)
@@ -468,7 +494,13 @@ renderPlayer tilePixels p@Player { playerPos = (x, y), health, playerAnim = anim
     sprite = anim !! spriteIdx
     spriteScaled = withTileScale tilePixels sprite
     spriteFlipped = scale moveDir 1 spriteScaled
-  in translate (x * tilePixels) (y * tilePixels) spriteFlipped
+    -- Flicker during invulnerability: toggle alpha 0.5/1.0 every flickerInterval, starting at 0.5
+    alphaVal =
+      if invulnTimeLeft <= 0 then 1.0 else
+        let elapsed = invulnDuration - invulnTimeLeft
+            k = floor (elapsed / flickerInterval) :: Int
+        in if even k then 0.5 else 1.0
+  in translate (x * tilePixels) (y * tilePixels) (color (makeColor 1 1 1 alphaVal) spriteFlipped)
 
 renderAABB :: Float -> Collider -> Picture
 renderAABB tileSize (AABB (x, y) w h _) =
@@ -492,16 +524,37 @@ dirToPictureScaleX Types.Right = -1
 
 -- Simple HUD: show jumps remaining in top-left corner
 renderHUD :: Float -> Float -> GameState -> Picture
-renderHUD screenW screenH GameState { player, debugMode } =
-  if not debugMode then blank else
-    let margin = 20
-        x = -screenW / 2 + margin
-        -- Place text fully within the screen: subtract its scaled height
-        s = (screenH * 0.08) / 100.0  -- ~8% of screen height
-        textHeight = 100 * s          -- Gloss baseline ~100 units
-        y =  screenH / 2 - margin - textHeight
-        txt = "Jumps: " ++ show (jumpsLeft player)
-    in translate x y $ color white $ scale s s $ text txt
+renderHUD screenW screenH gs@GameState { player, uiHeartFull, uiHeartHalf, uiHeartEmpty, uiCounters, playerLives } =
+  let
+    -- Common UI placement values
+    margin = 20 :: Float
+    topY = screenH / 2 - margin
+
+    -- Hearts row (top-left)
+    leftX = -screenW / 2 + margin
+    heartScale = (screenH * 0.06) / assetTilePixelSize
+    heartSpacing = 40 :: Float  -- increased spacing between hearts
+    heartPicFor idx =
+      let hp = health player
+          fulls = hp `div` 2
+          half  = hp `mod` 2
+      in if idx < fulls then uiHeartFull else if idx == fulls && half == 1 then uiHeartHalf else uiHeartEmpty
+    hearts = [ translate (leftX + fromIntegral i * heartSpacing) (topY - 16)
+                  (scale heartScale heartScale (heartPicFor i))
+             | i <- [0..2] ]
+
+    -- Lives counter (top-right): 'xN'
+    showLives = 'x' : show playerLives
+    counterScale = (screenH * 0.06) / assetTilePixelSize
+    counterSpacing = 16 :: Float
+    rightX = screenW / 2 - margin
+    counterPics = [ case Map.lookup ch uiCounters of { Just p -> p; Nothing -> blank } | ch <- showLives ]
+    totalWidth = counterSpacing * fromIntegral (length counterPics)
+    startX = rightX - totalWidth
+    countersPic = translate startX (topY - 16)
+                    $ Pictures [ translate (fromIntegral i * counterSpacing) 0 (scale counterScale counterScale p)
+                               | (i,p) <- zip [0..(length counterPics - 1)] counterPics ]
+  in Pictures (hearts ++ [countersPic])
 
 -- Pause overlay with Resume and Main Menu buttons
 renderPauseMenu :: (Int, Int) -> Picture

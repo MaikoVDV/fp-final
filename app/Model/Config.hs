@@ -68,3 +68,25 @@ stompJumpWindow = 0.3
 -- Jump impulse strength when jumping within stompJumpWindow after a stomp
 stompBoostedJumpImpulse :: Float
 stompBoostedJumpImpulse = 10
+
+-- Health and lives configuration
+maxHealth :: Int
+maxHealth = 6
+
+defaultLives :: Int
+defaultLives = 3
+
+-- Damage dealt by a Goomba on contact (non-stomp)
+goombaContactDamage :: Int
+goombaContactDamage = 3
+
+-- Player invulnerability (after getting hit)
+invulnDuration :: Float
+invulnDuration = 1.5
+
+flickerInterval :: Float
+flickerInterval = 0.25
+
+-- Time a goomba stays in shell before reviving (seconds)
+goombaShellDuration :: Float
+goombaShellDuration = 10

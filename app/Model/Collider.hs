@@ -19,6 +19,7 @@ entityCollider :: Entity -> Maybe Collider
 entityCollider (EGoomba  gId  g)  = goombaCollider  gId g
 entityCollider (EKoopa   kId  k)  = koopaCollider   kId k
 entityCollider (EPowerup puId pu) = powerupCollider puId pu
+entityCollider (ECoin    cId  c)  = coinCollider    cId c
 entityCollider _                  = Nothing
 
 goombaCollider :: Int -> Goomba -> Maybe Collider
@@ -32,6 +33,10 @@ koopaCollider kId Koopa { koopaPos, koopaColSpec } =
 powerupCollider :: Int -> Powerup -> Maybe Collider
 powerupCollider puId Powerup { powerupPos, powerupColSpec } =
   specToCollider powerupPos (CTEntity puId) <$> powerupColSpec
+
+coinCollider :: Int -> Coin -> Maybe Collider
+coinCollider cId Coin { coinPos, coinColSpec } =
+  specToCollider coinPos (CTEntity cId) <$> coinColSpec
 
 -- simple AABB vs AABB overlap test (treat widths/heights as full sizes)
 collides :: Collider -> Collider -> Bool

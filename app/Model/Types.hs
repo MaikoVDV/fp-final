@@ -11,6 +11,11 @@ data GameState = GameState
   , entityIdCounter :: Int
   , tileMap         :: TileMap
   , animMap         :: AnimMap
+  , uiHeartFull     :: Picture
+  , uiHeartHalf     :: Picture
+  , uiHeartEmpty    :: Picture
+  , uiCounters      :: Map.Map Char Picture
+  , playerLives     :: Int
   , tileZoom        :: Float
   , screenSize      :: (Int, Int)
   , frameCount      :: Int
@@ -105,13 +110,14 @@ data BrushMode = BrushNormal | BrushGrassColumn | BrushEraser deriving (Eq, Show
 
 data PaletteTab = TabBlocks | TabEnemies deriving (Eq, Show)
 
-data EnemySel = EnemyGoomba | EnemyEraser deriving (Eq, Show)
+data EnemySel = EnemyGoomba | EnemyCoin | EnemyEraser deriving (Eq, Show)
 
 -- Entities
 data Entity
   = EGoomba Int Goomba
   | EKoopa Int Koopa
   | EPowerup Int Powerup
+  | ECoin Int Coin
   | EPlatform Int
   deriving (Eq, Show)
 
@@ -120,6 +126,7 @@ data EntityType
   = TGoomba
   | TKoopa
   | TPowerup
+  | TCoin
   | TPlatform
   deriving (Eq, Ord, Show)
 
@@ -131,6 +138,7 @@ getEntityId :: Entity -> Int
 getEntityId (EGoomba   gId  _) = gId
 getEntityId (EKoopa    kId  _) = kId
 getEntityId (EPowerup  puId _) = puId
+getEntityId (ECoin     cId  _) = cId
 getEntityId (EPlatform pfId  ) = pfId
 
 
@@ -154,6 +162,7 @@ data Player = Player
   , jumpsLeft       :: Int
   , stompJumpTimeLeft :: Float
   , playerAnimClock :: Float
+  , invulnTimeLeft  :: Float
   } deriving (Eq, Show)
 
 data Goomba = Goomba
@@ -163,7 +172,14 @@ data Goomba = Goomba
   , goombaColSpec :: Maybe ColliderSpec
   , goombaOnGround :: Bool
   , goombaCollisions :: [CollisionEvent]
+  , goombaMode :: GoombaMode
   } deriving (Eq, Show)
+
+-- Goomba behavior mode
+--  - GWalking: normal walking behavior
+--  - GShelled t: in-shell state for t seconds (no horizontal movement)
+data GoombaMode = GWalking | GShelled Float
+  deriving (Eq, Show)
 
 data Koopa = Koopa
   { koopaPos  :: Point
@@ -179,6 +195,11 @@ data Powerup = Powerup
   , powerupDir  :: MoveDir
   , powerupColSpec :: Maybe ColliderSpec
   , powerupCollisions :: [CollisionEvent]
+  } deriving (Eq, Show)
+
+data Coin = Coin
+  { coinPos  :: Point
+  , coinColSpec :: Maybe ColliderSpec
   } deriving (Eq, Show)
 
 type Animation = [Picture]

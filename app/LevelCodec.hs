@@ -14,13 +14,16 @@ import Data.Bits ((.&.), (.|.), shiftL, shiftR)
 import Data.Maybe (mapMaybe)
 
 import Model.Types ( GameState(..), World(..), Tile(..), TileMap
-             , Player(..), Entity(..), Goomba(..), Koopa(..), ColliderSpec(..)
+             , Player(..), Entity(..), Goomba(..), Koopa(..), Coin(..), ColliderSpec(..)
              , Animation
              )
 import qualified Model.Types as Types
 import Model.Collider
 import Assets
+import qualified Data.Map as Map
+import Model.Scores (loadLives)
 import Model.Entity
+import qualified Model.Config as Config
 
 -- Tile <-> id mapping (supports up to 16 tiles)
 tileId :: Tile -> Word8
@@ -78,6 +81,7 @@ saveLevel path gs = do
       -- Save known enemy spawns we can reconstruct (ignore id in file format)
       encodeSpawn (EGoomba _ Goomba { goombaPos = (x,y) }) = Just (1 :: Word8, packPos x, packPos y)
       encodeSpawn (EKoopa  _ Koopa  { koopaPos  = (x,y) }) = Just (2 :: Word8, packPos x, packPos y)
+      encodeSpawn (ECoin   _ Coin   { coinPos   = (x,y) }) = Just (3 :: Word8, packPos x, packPos y)
       encodeSpawn _ = Nothing
       spawns = mapMaybe encodeSpawn (entities gs)
 
@@ -123,7 +127,10 @@ loadLevel :: FilePath -> Bool -> TileMap -> (Int, Int) -> IO GameState
 loadLevel path debugEnabled tileMap screenDims = do
   bs <- BS.readFile path
   animMap <- loadAnimMap
+  (heartFull, heartHalf, heartEmpty) <- loadHeartsUI
+  counters <- loadCountersUI
   playerAnimation <- loadPlayerAnimation
+  lives <- loadLives
   case parseLevel bs of
     Prelude.Left err -> ioError (userError ("Level load error: " ++ err))
     Prelude.Right (width, tiles1D, (px,py), spawns) -> do
@@ -139,12 +146,14 @@ loadLevel path debugEnabled tileMap screenDims = do
           initialPlayer = defaultPlayer
             { playerPos    = (px, py)
             , playerAnim   = playerAnimation
+            , health       = Config.maxHealth
             }
           -- Entities hebben net als player ook sprites, denk niet dat het handig is om die allemaal aan loadLevel te passen.
           -- We hebben sws nog niet echt een goed systeem voor sprites en animations laden, dus dat moeten we nog ff bedenken
           -- op n manier dat het ook goed werkt met de levelcodec
-          toEntity (1, x, y) = Just (EGoomba 0 Goomba { goombaPos=(x,y), goombaVel=(0,0), goombaDir=Types.Left, goombaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, goombaOnGround=False, goombaCollisions = [] })
+          toEntity (1, x, y) = Just (EGoomba 0 Goomba { goombaPos=(x,y), goombaVel=(0,0), goombaDir=Types.Left, goombaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, goombaOnGround=False, goombaCollisions = [], goombaMode = Types.GWalking })
           toEntity (2, x, y) = Just (EKoopa  0 Koopa  { koopaPos=(x,y),  koopaVel=(0,0), koopaDir=Types.Left, koopaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, koopaCollisions = [] })
+          toEntity (3, x, y) = Just (ECoin   0 Coin   { coinPos=(x,y),   coinColSpec=Just ColliderSpec { colliderWidth=0.6, colliderHeight=0.6, colliderOffset=(0,0) } })
           toEntity _         = Nothing
           entities' = mapMaybe toEntity spawns
           entitiesWithIds = zipWith (\ix e -> setId e ix) [0..] entities'
@@ -153,6 +162,11 @@ loadLevel path debugEnabled tileMap screenDims = do
         , player = initialPlayer
         , entities = entitiesWithIds
         , animMap  = animMap
+        , uiHeartFull = heartFull
+        , uiHeartHalf  = heartHalf
+        , uiHeartEmpty = heartEmpty
+        , uiCounters   = counters
+        , playerLives  = lives
         -- Elke entity heeft n unieke ID nodig, deze telt op als er een entity gespawnd wordt. Miss kan je 
         -- in de mapMaybe bij entities' berekenen wat entityIdCounter moet zijn (hoogste id die al in gebruik is + 1 bijvoorbeeld?)
         , entityIdCounter = length entitiesWithIds 
