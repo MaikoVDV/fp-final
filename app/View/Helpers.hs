@@ -85,7 +85,6 @@ entityWorldPos (EGoomba _ Goomba { goombaPos }) = Just goombaPos
 entityWorldPos (EKoopa  _ Koopa  { koopaPos  }) = Just koopaPos
 entityWorldPos (EPowerup _ Powerup { powerupPos }) = Just powerupPos
 entityWorldPos (ECoin    _ Coin    { coinPos    }) = Just coinPos
-entityWorldPos _ = Nothing
 
 entityVisible :: VisibleBounds -> Entity -> Bool
 entityVisible bounds entity =

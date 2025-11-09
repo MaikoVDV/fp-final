@@ -78,7 +78,10 @@ defaultLives = 3
 
 -- Damage dealt by a Goomba on contact (non-stomp)
 goombaContactDamage :: Int
-goombaContactDamage = 3
+goombaContactDamage = 2
+
+koopaContactDamage :: Int
+koopaContactDamage = 3
 
 -- Player invulnerability (after getting hit)
 invulnDuration :: Float

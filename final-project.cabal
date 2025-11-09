@@ -39,10 +39,11 @@ executable final-project
       View.Builder
 
       Controller.Update
-      Controller.Input
       Controller.Collision
       Controller.Movement
       Controller.WorldMap
+      Controller.Input
+      Controller.InputMenu
       MathUtils
       Assets
       LevelCodec

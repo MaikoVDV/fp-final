@@ -6,7 +6,7 @@ import Model.World
 import Model.Entity
 import Data.List (foldl')
 import Model.Collider
-import Model.Config (stompBounceVelocity, stompJumpWindow, goombaShellDuration, goombaContactDamage)
+import Model.Config (stompBounceVelocity, stompJumpWindow, goombaShellDuration, goombaContactDamage, koopaContactDamage)
 
 
 handleCollisionEvents :: GameState -> GameState
@@ -49,6 +49,8 @@ handlePlayerCollisions gameState =
                   else
                     -- Side/bottom touch: damage player (if not invulnerable)
                     damagePlayerN goombaContactDamage gs
+              (EKoopa _ _) -> 
+                damagePlayerN koopaContactDamage gs 
               (EPowerup _ _) -> 
                 healPlayer $ killEntity gs eId
               _            -> gs
@@ -139,7 +141,7 @@ handleEnemyCollisions gs@GameState { entities } =
         case koopaCollider eId k of
           Just ec | collides pc ec -> 
             bouncePlayer $
-            damagePlayerN goombaContactDamage acc 
+            damagePlayerN koopaContactDamage acc 
           _ -> acc
       _ -> acc
 
