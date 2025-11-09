@@ -2,15 +2,13 @@ module Model.WorldMap where
 
 import Graphics.Gloss
 import Data.Maybe (mapMaybe)
-
--- Identifiers
 newtype NodeId = NodeId Int deriving (Eq, Ord, Show)
 newtype EdgeId = EdgeId Int deriving (Eq, Ord, Show)
 
 -- Where to find the level when entering a node
 data LevelRef
-  = BuiltIn FilePath    -- e.g. "built-in-levels/world1/1-1.lvl"
-  | External FilePath   -- e.g. "levels/my-level.lvl"
+  = BuiltIn FilePath    -- in the built-in-world folder
+  | External FilePath   -- in the custom levels folder
   deriving (Eq, Show)
 
 data NodeType = Level | Hub | Boss | Warp deriving (Eq, Show)
@@ -19,7 +17,7 @@ data NodeState = Locked | Unlocked | Completed deriving (Eq, Show)
 data MapNode = MapNode
   { nodeId    :: NodeId
   , title     :: String
-  , levelRef  :: Maybe LevelRef -- Hubs may not correspond to a level
+  , levelRef  :: Maybe LevelRef -- Hubs don't correspond to a level, but are just there to make the map more traversable
   , pos       :: Point          -- Map-space position
   , nodeType  :: NodeType
   , nodeState :: NodeState
@@ -28,10 +26,10 @@ data MapNode = MapNode
 data EdgeDir = Undirected | AtoB | BtoA | Both deriving (Eq, Show)
 
 data PathShape
-  = Straight                   -- Connect node positions with a straight line
-  | Polyline [Point]           -- Absolute points
-  | Bezier Point Point Point Point    -- Cubic Bezier via absolute points
-  | CatmullRom [Point]               -- Through-points spline
+  = Straight
+  | Polyline [Point]
+  | Bezier Point Point Point Point
+  | CatmullRom [Point]
   deriving (Eq, Show)
 
 data Edge = Edge
@@ -72,7 +70,6 @@ neighbors wm nid = [ other e | e <- edges wm, visible e ]
 -- Rendering helpers
 -- The functions below convert mathematical representations of lines, specified by
 -- beziers or Catmull-Rom splines into a list of Points that can be drawn using Gloss' lines function
-
 bezier3 :: Float -> Point -> Point -> Point -> Point -> Point
 bezier3 t (x0,y0) (x1,y1) (x2,y2) (x3,y3) = (bx x0 x1 x2 x3, bx y0 y1 y2 y3)
   where
@@ -118,8 +115,6 @@ edgeToPolyline wm e = case shape e of
   Polyline ps -> ps
   Bezier p0 p1 p2 p3 -> sampleBezier 24 (p0,p1,p2,p3)
   CatmullRom ps      -> sampleCatmullRom 10 ps
-
--- Public helpers 
 
 edgeById :: WorldMap -> EdgeId -> Maybe Edge
 edgeById WorldMap{edges} eid = go edges
@@ -197,20 +192,3 @@ adjacentDirected wm nid = mapMaybe option (edges wm)
     unit (x,y) =
       let m = sqrt (x*x + y*y)
       in if m < 1e-6 then (0,0) else (x/m, y/m)
-
--- Example small map ---------------------------------------------------------
-exampleWorldMap :: WorldMap
-exampleWorldMap =
-  let n0 = MapNode (NodeId 0) "Start" (Just (BuiltIn "built-in-levels/world1/1-1.lvl")) (-300, 0) Level Unlocked
-      n1 = MapNode (NodeId 1) "1-2"   (Just (BuiltIn "built-in-levels/world1/1-2.lvl")) (-100, 80) Level Locked
-      n2 = MapNode (NodeId 2) "Hub"   Nothing                                  (100,  40) Hub   Locked
-      n3 = MapNode (NodeId 3) "Boss"  (Just (BuiltIn "built-in-levels/world1/boss.lvl")) (280,  20) Boss  Locked
-
-      e0 = Edge (EdgeId 0) (NodeId 0) (NodeId 1) Both Straight True
-      -- Curved link between 1 and hub
-      e1 = Edge (EdgeId 1) (NodeId 1) (NodeId 2) Both (Bezier (-100,80) (-40,140) (40,100) (100,40)) False
-      -- Polyline shortcut
-      e2 = Edge (EdgeId 2) (NodeId 0) (NodeId 2) Both (Polyline [(-300,0),(-200,-60),(-20,-40),(100,40)]) False
-      -- Final straight to boss
-      e3 = Edge (EdgeId 3) (NodeId 2) (NodeId 3) AtoB Straight False
-  in WorldMap { nodes = [n0,n1,n2,n3], edges = [e0,e1,e2,e3] }

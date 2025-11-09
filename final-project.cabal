@@ -42,6 +42,7 @@ executable final-project
       Controller.Input
       Controller.Collision
       Controller.Movement
+      Controller.WorldMap
       MathUtils
       Assets
       LevelCodec

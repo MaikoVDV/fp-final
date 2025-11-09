@@ -1,4 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use lambda-case" #-}
 
 module Model.WorldMapCodec
   ( loadWorldMapFile
@@ -13,16 +16,16 @@ import Control.Applicative ((<|>))
 
 import Model.WorldMap
 
--- Point as [x,y]
+-- Make WorldMap components serializable by creating instances of ToJSON and FromJSON
 instance ToJSON NodeId where
   toJSON (NodeId i) = Number (fromIntegral i)
 instance FromJSON NodeId where
-  parseJSON = withScientific "NodeId" (\n -> pure (NodeId (round n)))
+  parseJSON = withScientific "NodeId" (pure . NodeId . round)
 
 instance ToJSON EdgeId where
   toJSON (EdgeId i) = Number (fromIntegral i)
 instance FromJSON EdgeId where
-  parseJSON = withScientific "EdgeId" (\n -> pure (EdgeId (round n)))
+  parseJSON = withScientific "EdgeId" (pure . EdgeId . round)
 
 instance ToJSON LevelRef where
   toJSON (BuiltIn p)  = object ["builtIn"  .= p]
@@ -55,8 +58,6 @@ instance FromJSON EdgeDir where
   parseJSON = withText "EdgeDir" $ \t -> case t of
     "Undirected" -> pure Undirected; "AtoB" -> pure AtoB; "BtoA" -> pure BtoA; "Both" -> pure Both
     _ -> fail "Invalid EdgeDir"
-
--- Point uses Aeson tuple instance (encoded as [x,y])
 
 instance ToJSON MapNode where
   toJSON MapNode { nodeId, title, levelRef, pos, nodeType, nodeState } =
@@ -118,21 +119,17 @@ instance FromJSON WorldMap where
 loadWorldMapFile :: FilePath -> IO (Either String WorldMap)
 loadWorldMapFile fp = eitherDecode <$> BL.readFile fp
 
--- Save with a compact, human-friendly layout:
--- - Top-level object pretty
--- - Each node/edge serialized as single-line JSON
--- - Arrays are line-broken with one element per line
 saveWorldMapFile :: FilePath -> WorldMap -> IO ()
 saveWorldMapFile fp wm = BL.writeFile fp (renderOneLineArrays wm)
 
 renderOneLineArrays :: WorldMap -> BL.ByteString
 renderOneLineArrays wm =
-  let oneLine a = encode a  -- Aeson encodes compact single-line JSON
-      nl = BL8.pack "\n"
-      indent n = BL8.pack (replicate n ' ')
-      joinWith sep = BL.intercalate sep
-      nodesLines = [ indent 4 <> oneLine n | n <- nodes wm ]
-      edgesLines = [ indent 4 <> oneLine e | e <- edges wm ]
+  let 
+    nl = BL8.pack "\n"
+    indent n = BL8.pack (replicate n ' ')
+    joinWith = BL.intercalate 
+    nodesLines = [ indent 4 <> encode n | n <- nodes wm ]
+    edgesLines = [ indent 4 <> encode e | e <- edges wm ]
   in mconcat
       [ BL8.pack "{\n"
       , indent 2, BL8.pack "\"nodes\": [\n"

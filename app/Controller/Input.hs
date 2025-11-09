@@ -218,7 +218,6 @@ shiftEntityIntoRange dx maxX entity =
       if withinBounds x' maxX
         then Just (ECoin eid (c { coinPos = (x', y) }))
         else Nothing
-    _ -> Just entity
 
 withinBounds :: Float -> Float -> Bool
 withinBounds x maxX = x >= 0 && x < maxX
@@ -428,7 +427,6 @@ buttonFromMouseMain (mx, my)
                    dy = abs (my - cy)
                in dx <= btnW/2 && dy <= btnH/2
 
--- Builder select mouse focus: 0 = New Level, 1.. = files
 -- Convert a focus Int to (row, col)
 focusToRC :: Int -> (Int, Int)
 focusToRC f = (f `div` 2, f `mod` 2)
@@ -796,7 +794,7 @@ adjustBuilderZoom delta bs@BuilderState { builderTileZoom } =
   let newVal = clampTileZoom (builderTileZoom + delta)
   in bs { builderTileZoom = newVal }
 
--- Helper: paint current brush at mouse position if it corresponds to a new valid tile
+-- Paints the selected tile at mouse position, if that position is valid to be drawn on
 paintAtMouse :: Float -> Float -> BuilderState -> BuilderState
 paintAtMouse mx my bs@BuilderState { builderWorld = w, builderScreenSize, builderTileZoom, builderCam = (camX, camY), builderLastPaint, builderBrush, builderBrushMode, builderPaletteTab, builderEntities, builderEnemySel } =
   let tilePixels = baseTilePixelSizeForScreen builderScreenSize * builderTileZoom * scaleFactor
@@ -854,7 +852,7 @@ paintAtMouse mx my bs@BuilderState { builderWorld = w, builderScreenSize, builde
                                      , builderDirty = True }
         else bs
 
--- Hit test for leave confirmation popup buttons: True = Yes, False = No
+-- Hit test for leave confirmation popup buttons
 leaveConfirmHit :: (Int, Int) -> (Float, Float) -> Maybe Bool
 leaveConfirmHit (screenW, screenH) (mx, my) =
   let sw = fromIntegral screenW :: Float
@@ -885,10 +883,10 @@ leaveToMenuFromBuilder bs = do
             }
   return (Menu ms)
 
--- Palette hit test: with tabs and enemies
 -- Two-column grid beneath a tabs header
 data PaletteSel = SelTile Tile | SelTool BrushMode | SelTab PaletteTab | SelEnemy EnemySel
 
+-- Palette hit test for both tabs
 paletteHit :: (Int, Int) -> PaletteTab -> (Float, Float) -> Maybe PaletteSel
 paletteHit (screenW, screenH) currentTab (mx, my) =
   let sw = fromIntegral screenW :: Float
@@ -1004,7 +1002,7 @@ adjustTileZoom delta gs =
       newVal = clampTileZoom (cur + delta)
   in gs { tileZoom = newVal }
 
--- Pause menu hit test: True = Resume, False = Main Menu
+-- Pause menu hit test
 pausedMenuHit :: (Int, Int) -> (Float, Float) -> Maybe Bool
 pausedMenuHit (screenW, screenH) (mx, my) =
   let sw = fromIntegral screenW :: Float

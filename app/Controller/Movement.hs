@@ -54,6 +54,7 @@ applyMovement dt blockers gs jumpAccel p@Player
                   `addVec` jumpAccel
     velAfterAccel = addVec vel (scaleVec totalAccel dt)
     displacement = scaleVec velAfterAccel dt -- Desired movement for this timestep
+
     -- If player has a collider, resolve movement to prevent collider overlap
     -- else, simply move the player along the desired displacement
     (resolvedPos, flags, events) =
@@ -220,47 +221,3 @@ contactFrictionAccel normals vel =
     ]
   where
     unique = nub
-
--- We gebruiken op dit moment niet echt type class abstractions
--- is wel handig om later nog toe te passen want vgm vinden ze dat mooier/beter
--- voor als we n beter cijfertje willen
-
--- class Movable e where
---   getPos :: e -> Point
---   setPos :: e -> Point -> e
---   getVel :: e -> Vector
---   setVel :: e -> Vector -> e
-
--- class Movable e => Rigidbody e where
---   getLevelCollisions :: e -> TileMap -> [TileMap]
-
--- updateMovable :: Movable e => Float -> e -> e
--- updateMovable dt e =
---   let (vx, vy)   = getVel e
---       (x,  y)    = getPos e
---    in setPos e (x + vx * dt, y + vy * dt)
-
--- updatePhysics :: Rigidbody e => Float -> e -> e
--- updatePhysics dt e =
---   let (vx, vy) = getVel e
---   in setVel e (vx, vy + gravityAcceleration * dt)
-
-
-
--- instance Movable Player where
---   getPos       = playerPos
---   setPos p pos = p { playerPos = pos }
---   getVel       = playerVel
---   setVel p vel = p { playerVel = vel }
-
--- instance Rigidbody Player where
---   getLevelCollisions = undefined
-
--- instance Movable Goomba where
---   getPos       = goombaPos
---   setPos g pos = g { goombaPos = pos }
---   getVel       = goombaVel
---   setVel g vel = g { goombaVel = vel }
-
--- instance Rigidbody Goomba where
---   getLevelCollisions = undefined:w

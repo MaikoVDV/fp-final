@@ -14,9 +14,10 @@ import Model.Entity
 import Controller.Input
 import Controller.Collision
 import Controller.Movement
+import Controller.WorldMap
 
 import MathUtils
-import Model.WorldMap (polylineLength, Edge(..), WorldMap(..), MapNode(..), EdgeDir(..), NodeState(..), NodeType(..), NodeId(..))
+import Model.WorldMap (Edge(..), WorldMap(..), MapNode(..), EdgeDir(..), NodeState(..), NodeType(..), NodeId(..))
 import Model.WorldMapCodec (saveWorldMapFile)
 
 import Model.Scores (saveLives)
@@ -42,7 +43,7 @@ update dt (Playing gs)
       let l0 = playerLives gsPrepared
           l1 = playerLives gsPost
       if l1 /= l0 then saveLives l1 else return ()
-      -- If died with no lives left: restore 5 lives and reset world progress unless boss defeated
+      -- If died with no lives left, restore 5 lives and reset world progress unless boss defeated
       gsFinal <- case nextState gsPost of
                   NDeath | playerLives gsPost <= 0 -> do
                     let newLives = 5
@@ -85,51 +86,6 @@ update dt (Playing gs)
 update _ (Building bs)      = return (Building bs)
 update dt (WorldMapScreen ms) = return (WorldMapScreen (updateMap dt ms))
 
-updateMap :: Float -> MapState -> MapState
-updateMap _ ms@MapState { wmAlong = Nothing } = ms
-updateMap dt ms@MapState { wmAlong = Just (eid, pts, dest, t), wmSpeed } =
-  let len = polylineLength pts
-  in if len <= 1e-3
-        then ms { wmCursor = dest, wmAlong = Nothing }
-        else
-          let step = wmSpeed * dt / len
-              t' = t + step
-          in if t' >= 1
-                then ms { wmCursor = dest, wmAlong = Nothing }
-                else ms { wmAlong = Just (eid, pts, dest, t') }
-
--- Unlock neighbors and mark current node completed
-unlockAfterFinish :: MapState -> MapState
-unlockAfterFinish ms@MapState { wmWorldMap = wm, wmCursor = cur } =
-  let edges1 = [ if allowsFrom e cur then e { unlocked = True } else e | e <- edges wm ]
-      neighborIds = [ other e cur | e <- edges wm, allowsFrom e cur ]
-      -- Hubs among immediate neighbors
-      isHubId nid = case filter ((== nid) . nodeId) (nodes wm) of
-                      (n:_) -> case nodeType n of { Hub -> True; _ -> False }
-                      _     -> False
-      hubIds = [ nid | nid <- neighborIds, isHubId nid ]
-      -- Unlock all edges emanating from unlocked hubs as well
-      unlockFromHub e = any (allowsFrom e) hubIds
-      edges2 = [ if unlockFromHub e then e { unlocked = True } else e | e <- edges1 ]
-      -- Also unlock nodes reachable from those hubs
-      neighborIdsFromHubs = [ other e h | e <- edges wm, h <- hubIds, allowsFrom e h ]
-      nodes' = [ updateNode n | n <- nodes wm ]
-      updateNode n
-        | nodeId n == cur = n { nodeState = Completed }
-        | nodeId n `elem` (neighborIds ++ neighborIdsFromHubs) = case nodeState n of
-            Locked -> n { nodeState = Unlocked }
-            _      -> n
-        | otherwise = n
-      wm' = wm { nodes = nodes', edges = edges2 }
-  in ms { wmWorldMap = wm' }
-  where
-    allowsFrom e nid = case dir e of
-      Undirected -> a e == nid || b e == nid
-      Both       -> a e == nid || b e == nid
-      AtoB       -> a e == nid
-      BtoA       -> b e == nid
-    other e nid = if a e == nid then b e else a e
-
 -- Main game update function
 updateGame :: Float -> GameState -> GameState
 updateGame dt =
@@ -163,11 +119,11 @@ updatePlayer dt gs =
       blockers = colliders (world gs)
       (jumpAccel, jumpTimer) = computeJumpHold dt gs p
       movedPlayer = applyMovement dt blockers gs jumpAccel p
-      -- Advance animation clock proportionally to horizontal speed and dt,
-      -- only while a left/right key is held.
+      -- Make animation speed dependent on horizontal velocity
+      -- while left/right is held.
       vxAbs = abs (fst (playerVel movedPlayer))
       movingInput = moveLeftHeld movedPlayer || moveRightHeld movedPlayer
-      animRateScale = 2.5 -- frames per second at 1 unit/s
+      animRateScale = 2.5 
       animClock'
         | movingInput = playerAnimClock movedPlayer + vxAbs * animRateScale * dt
         | otherwise   = playerAnimClock movedPlayer
@@ -228,7 +184,6 @@ updateEntities dt gs = gs { entities = map (updateIfActive dt gs) (entities gs) 
     updateIfActive delta state entity
       | entityWithinActiveBounds state entity = updateEntity delta state entity
       | otherwise = entity
-
 
 entityWithinActiveBounds :: GameState -> Entity -> Bool
 entityWithinActiveBounds gs entity =
