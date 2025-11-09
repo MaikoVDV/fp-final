@@ -280,7 +280,7 @@ entityPosition _ = Nothing
 -- Handle updating different types of entities separately
 updateEntity :: Float -> GameState -> Entity -> Entity
 updateEntity dt gs (EGoomba  gId  g)  = EGoomba  gId  (updateGoomba  dt gs gId  g)
-updateEntity _  _  (EKoopa   kId  k)  = EKoopa   kId  k
+updateEntity dt gs (EKoopa   kId  k)  = EKoopa   kId  (updateKoopa   dt gs kId  k)
 updateEntity dt gs (EPowerup puId pu) = EPowerup puId (updatePowerup dt gs puId pu)
 updateEntity _  _  (ECoin    cId  c)  = ECoin    cId  c
 updateEntity _  _  e                   = e
@@ -354,7 +354,62 @@ updateGoomba dt gs gId g@Goomba
                             then (GWalking, (0, vy))
                             else (GShelled ttl', (0, vy))
 
-    -- Enemy-vs-enemy separation handled in resolveInterEnemyOverlaps
+updateKoopa :: Float -> GameState -> Int -> Koopa -> Koopa
+updateKoopa dt gs gId k@Koopa
+  { koopaPos = pos
+  , koopaVel= vel
+  , koopaColSpec = colSpec
+  , koopaDir = dir
+  } =
+  case colSpec of
+    Nothing ->
+      let velAfterAccel = addVec vel (scaleVec totalAccel dt)
+          velLimited    = clampGoombaVelocity velAfterAccel
+          newPos        = addVecToPoint pos (scaleVec velLimited dt)
+      in k { koopaPos = newPos
+           , koopaVel = velLimited
+           }
+    Just spec ->
+      let velAfterAccel   = addVec vel (scaleVec totalAccel dt)
+          displacement    = scaleVec velAfterAccel dt
+          -- Only block against world and player; enemy separation handled globally
+          -- Phase-through player: only world blocks the goomba
+          blockers        = colliders (world gs)
+          collider        = specToCollider pos (CTEntity gId) spec
+          (resolvedPos, flags, events) = resolveMovement collider pos displacement blockers
+          velAfterCollision    = applyCollisionFlags flags velAfterAccel
+          contactDrag          = contactFrictionAccel (contactNormals flags) velAfterCollision
+          velWithFriction      = addVec velAfterCollision (scaleVec contactDrag dt)
+          velLimited           = clampGoombaVelocity velWithFriction
+          wallAheadProbe       =
+            hitX flags &&
+            let probeOffset   = (dirSign * wallProbeDistance, 0)
+                probeCollider = specToCollider (addVecToPoint resolvedPos probeOffset) None spec
+            in any (collides probeCollider) blockers
+          hitWall              = wallAheadProbe
+          newDir            = if hitWall then flipDir dir else dir
+          vxWalk            = if hitWall then 0 else fst velLimited
+          velFinal            = (vxWalk, snd velLimited)
+      in k { koopaPos        = resolvedPos
+           , koopaVel        = velFinal
+           , koopaDir        = newDir
+           , koopaOnGround   = groundContact flags
+           , koopaCollisions = events
+           }
+  where
+    gravityAccel  = (0, gravityAcceleration)
+    dirSign       = case dir of { DirLeft -> -1.0; DirRight -> 1.0 }
+    goombaAccel   = (dirSign * goombaMoveAccel, 0) 
+    airDrag       = (- (airFrictionCoeff * fst vel), 0)
+    totalAccel    = gravityAccel `addVec` goombaAccel `addVec` airDrag
+    clampGoombaVelocity (vx, vy) =
+      let vx' = max (-goombaWalkSpeed) (min goombaWalkSpeed vx)
+      in (vx', vy)
+    flipDir DirLeft  = DirRight
+    flipDir DirRight = DirLeft
+  
+
+-- Entity-Entity separation handled in resolveInterEnemyOverlaps
 updatePowerup :: Float -> GameState -> Int -> Powerup -> Powerup
 updatePowerup dt gs puId pu@Powerup
   { powerupPos = pos
@@ -373,8 +428,7 @@ updatePowerup dt gs puId pu@Powerup
     Just spec ->
       let velAfterAccel   = addVec vel (scaleVec totalAccel dt)
           displacement    = scaleVec velAfterAccel dt
-          -- Phase-through player: only world blocks the powerup
-          blockers        = colliders (world gs)
+          blockers        = colliders (world gs) -- doesn't collide with player or entities
           collider        = specToCollider pos (CTEntity puId) spec
           (resolvedPos, flags, events) = resolveMovement collider pos displacement blockers
           velAfterCollision    = applyCollisionFlags flags velAfterAccel
@@ -388,16 +442,11 @@ updatePowerup dt gs puId pu@Powerup
             in any (collides probeCollider) blockers
           hitWall              = wallAhead
           newDirBase           = if hitWall then flipDir dir else dir
-          newDir               =
-            if hitWall
-              then newDirBase
-              --then trace ("[DEBUG] Powerup (id: " ++ show puId ++ ") wall collision at " ++ show resolvedPos ++ "\n") newDirBase
-              else newDirBase
           adjVx                = if hitWall then 0 else fst velLimited
           velFinal             = (adjVx, snd velLimited)
       in pu { powerupPos        = resolvedPos
             , powerupVel        = velFinal
-            , powerupDir        = newDir
+            , powerupDir        = newDirBase
             , powerupCollisions = events
             }
   where
@@ -412,7 +461,7 @@ updatePowerup dt gs puId pu@Powerup
     flipDir DirLeft  = DirRight
     flipDir DirRight = DirLeft
 
--- After entities update, push overlapping enemies (goomba/koopa) apart symmetrically
+-- After entities update, push overlapping entities (goomba/koopa) apart symmetrically
 resolveInterEnemyOverlaps :: GameState -> GameState
 resolveInterEnemyOverlaps gs@GameState { entities = es } =
   gs { entities = resolveAll es }
@@ -450,12 +499,11 @@ resolveInterEnemyOverlaps gs@GameState { entities = es } =
       EKoopa  _ _ -> True
       _           -> False
 
-    -- World blockers (tiles) to prevent pushing enemies into walls/ground
+    -- World blockers (tiles) to prevent pushing enemies into the level
     blockers :: [Collider]
     blockers = colliders (world gs)
 
-    -- Try to move an enemy by a separation vector. If that would collide with
-    -- world/ground, cancel the push and keep its original position.
+    -- Try to move an enemy by a separation vector. If that would collide with the level, cancel the push and keep its original position.
     moveBy :: Vector -> Entity -> Entity
     moveBy (dx, dy) e = case e of
       EGoomba eid g ->

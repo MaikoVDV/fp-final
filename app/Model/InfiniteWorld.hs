@@ -114,7 +114,7 @@ mergeWorlds base addition =
       rowsB' = padRows rowsB widthB
       combined = zipWith (++) rowsA' rowsB'
       colliders = generateCollidersForWorld combined
-  in base { grid = combined, colliders = colliders, slopes = [] }
+  in base { grid = combined, colliders = colliders }
 
 worldWidth :: World -> Int
 worldWidth w = case grid w of

@@ -7,7 +7,7 @@ import System.Exit (exitSuccess)
 import System.Directory (createDirectoryIfMissing, listDirectory, doesDirectoryExist, removeFile, doesFileExist)
 import System.FilePath (takeDirectory, takeFileName, dropExtension, (</>), (<.>))
 import Data.List (isPrefixOf)
-import Data.Maybe (listToMaybe, mapMaybe)
+import Data.Maybe (listToMaybe, mapMaybe, isNothing)
 import Control.Monad (when)
 import Control.Exception (catch, SomeException)
 import Data.Aeson (encode)
@@ -16,18 +16,19 @@ import System.Random (randomRIO)
 
 import Model.Types
 import Model.TypesState
-import LevelCodec (saveLevel, loadLevel)
-import MathUtils
 import Model.InitialState
 import Model.World
-import Model.Collider (generateCollidersForWorld)
+import Model.Collider
+import Model.Config 
+import Model.Entity 
+import Model.WorldMap 
+import Model.WorldMapCodec 
+import Model.InfiniteSegments 
+import Model.InfiniteWorld 
+
+import LevelCodec 
+import MathUtils
 import Assets
-import Model.Config (maxHealth, zoomStep, scaleFactor, jumpHoldDuration, jumpHoldAccelStart)
-import Model.Entity (defaultPlayer, defaultGoomba, defaultCoin)
-import Model.WorldMap (NodeId(..), adjacentDirected, nodeById, LevelRef(..), levelRef, edgeId)
-import Model.WorldMapCodec (loadWorldMapFile)
-import Model.InfiniteSegments (SegmentMeta(..), segmentsDirectory, segmentMetaSuffix, loadSegmentMetas)
-import Model.InfiniteWorld (ensureInfiniteSegments, segmentsAheadDefault)
 
 -- Press 's' in build mode to save the current level
 -- Normally levels are saved to the levels folder, but when in debug mode, they're saved to built-in-levels
@@ -642,14 +643,14 @@ handleWorldMapInput :: Event -> MapState -> IO AppState
 handleWorldMapInput e ms@MapState { wmWorldMap = wm, wmCursor = cur, wmAlong } = case e of
   EventKey (SpecialKey KeyEsc) Down _ _   -> return (Menu (wmMenuState ms))
   EventKey (SpecialKey KeyEnter) Down _ _ -> startCurrentNodeLevel ms
-  EventKey (Char 'w') Down _ _ | wmAlong == Nothing -> return (tryMove (0,1))
-  EventKey (Char 'W') Down _ _ | wmAlong == Nothing -> return (tryMove (0,1))
-  EventKey (Char 's') Down _ _ | wmAlong == Nothing -> return (tryMove (0,-1))
-  EventKey (Char 'S') Down _ _ | wmAlong == Nothing -> return (tryMove (0,-1))
-  EventKey (Char 'a') Down _ _ | wmAlong == Nothing -> return (tryMove (-1,0))
-  EventKey (Char 'A') Down _ _ | wmAlong == Nothing -> return (tryMove (-1,0))
-  EventKey (Char 'd') Down _ _ | wmAlong == Nothing -> return (tryMove (1,0))
-  EventKey (Char 'D') Down _ _ | wmAlong == Nothing -> return (tryMove (1,0))
+  EventKey (Char 'w') Down _ _ | isNothing wmAlong -> return (tryMove (0,1))
+  EventKey (Char 'W') Down _ _ | isNothing wmAlong -> return (tryMove (0,1))
+  EventKey (Char 's') Down _ _ | isNothing wmAlong -> return (tryMove (0,-1))
+  EventKey (Char 'S') Down _ _ | isNothing wmAlong -> return (tryMove (0,-1))
+  EventKey (Char 'a') Down _ _ | isNothing wmAlong -> return (tryMove (-1,0))
+  EventKey (Char 'A') Down _ _ | isNothing wmAlong -> return (tryMove (-1,0))
+  EventKey (Char 'd') Down _ _ | isNothing wmAlong -> return (tryMove (1,0))
+  EventKey (Char 'D') Down _ _ | isNothing wmAlong -> return (tryMove (1,0))
   _ -> return (WorldMapScreen ms)
 
   where
@@ -693,7 +694,7 @@ startBuilder ms@MenuState { menuDebugMode, menuScreenSize } = do
       height = 16
       emptyRow = replicate width Air
       grid = replicate height emptyRow
-      builderWorld = World { grid = grid, colliders = [], slopes = [] }
+      builderWorld = World { grid = grid, colliders = [] }
       bs = BuilderState
               { builderWorld = builderWorld
              , builderTileMap = tileMap
@@ -713,7 +714,7 @@ startBuilder ms@MenuState { menuDebugMode, menuScreenSize } = do
              , builderLastMouse = (0, 0)
              , builderLMBHeld = False
              , builderLastPaint = Nothing
-              , builderFilePath = Just (((if menuDebugMode then "built-in-levels/" else "levels/") ) ++ menuInput ms)
+              , builderFilePath = Just ((if menuDebugMode then "built-in-levels/" else "levels/") ++ menuInput ms)
               }
   return (Building bs)
 
@@ -771,6 +772,7 @@ handleBuildingInput (EventKey (MouseButton LeftButton) Down _ (mx, my)) bs@Build
     Just (SelTile tile) -> bs { builderBrush = tile, builderBrushMode = BrushNormal, builderLMBHeld = False, builderLastPaint = Nothing }
     Just (SelTool mode) -> bs { builderBrushMode = mode, builderLMBHeld = False, builderLastPaint = Nothing }
     Just (SelEnemy EnemyGoomba) -> bs { builderEnemySel = EnemyGoomba, builderLMBHeld = False, builderLastPaint = Nothing }
+    Just (SelEnemy EnemyKoopa)  -> bs { builderEnemySel = EnemyKoopa,  builderLMBHeld = False, builderLastPaint = Nothing }
     Just (SelEnemy EnemyCoin)   -> bs { builderEnemySel = EnemyCoin,   builderLMBHeld = False, builderLastPaint = Nothing }
     Just (SelEnemy EnemyEraser) -> bs { builderEnemySel = EnemyEraser, builderLMBHeld = False, builderLastPaint = Nothing }
     Nothing   -> let bs' = bs { builderLMBHeld = True }
@@ -801,7 +803,7 @@ paintAtMouse mx my bs@BuilderState { builderWorld = w, builderScreenSize, builde
       wx = (mx - camX) / tilePixels
       wy = (my - camY) / tilePixels
       col = floor wx
-      row = floor ((-wy))
+      row = floor (-wy)
       inBounds = row >= 0 && col >= 0 && row < length (grid w) && (null (grid w) || col < length (head (grid w)))
       (wExpanded, (cx, cy)) = if inBounds then (w, (col, row)) else ensureInBounds w (col, row)
       sameAsLast = builderLastPaint == Just (cx, cy)
@@ -813,6 +815,7 @@ paintAtMouse mx my bs@BuilderState { builderWorld = w, builderScreenSize, builde
                      cellOf (x', y') = (floor x', floor (-y'))
                      isAtCell e = case e of
                        EGoomba _ Goomba { goombaPos = p } -> cellOf p == (cx, cy)
+                       EKoopa  _ Koopa  { koopaPos  = p } -> cellOf p == (cx, cy)
                        ECoin   _ Coin   { coinPos   = p } -> cellOf p == (cx, cy)
                        _ -> False
                      existsHere = any isAtCell builderEntities
@@ -820,10 +823,13 @@ paintAtMouse mx my bs@BuilderState { builderWorld = w, builderScreenSize, builde
                                EnemyEraser -> filter (not . isAtCell) builderEntities
                                EnemyGoomba -> if existsHere
                                                 then filter (not . isAtCell) builderEntities
-                                                else (EGoomba 0 defaultGoomba { goombaPos=(cxWorld, cyWorld) } : builderEntities)
+                                                else EGoomba 0 defaultGoomba { goombaPos=(cxWorld, cyWorld) } : builderEntities
+                               EnemyKoopa  -> if existsHere
+                                                then filter (not . isAtCell) builderEntities
+                                                else EKoopa 0 defaultKoopa { koopaPos=(cxWorld, cyWorld) } : builderEntities
                                EnemyCoin   -> if existsHere
                                                 then filter (not . isAtCell) builderEntities
-                                                else (ECoin  0 defaultCoin  { coinPos=(cxWorld, cyWorld) } : builderEntities)
+                                                else ECoin  0 defaultCoin  { coinPos=(cxWorld, cyWorld) } : builderEntities
                  in bs { builderWorld = wExpanded
                        , builderEntities = ents'
                        , builderLastPaint = Just (cx, cy)
@@ -920,6 +926,7 @@ paletteHit (screenW, screenH) currentTab (mx, my) =
               PTile t        -> Just (SelTile t)
               PSpecial sb    -> Just (SelTool (specialToMode sb))
               PEnemyGoomba   -> Just (SelEnemy EnemyGoomba)
+              PEnemyKoopa    -> Just (SelEnemy EnemyKoopa)
               PEnemyCoin     -> Just (SelEnemy EnemyCoin)
               PEnemyEraser   -> Just (SelEnemy EnemyEraser)
         | otherwise -> Nothing
@@ -927,7 +934,7 @@ paletteHit (screenW, screenH) currentTab (mx, my) =
 -- Palette tiles in desired order (excluding Air)
 data SpecialBrush = GrassColumn | Eraser
 
-data PaletteItem = PTile Tile | PSpecial SpecialBrush | PEnemyGoomba | PEnemyCoin | PEnemyEraser
+data PaletteItem = PTile Tile | PSpecial SpecialBrush | PEnemyGoomba | PEnemyKoopa | PEnemyCoin | PEnemyEraser
 
 specialToMode :: SpecialBrush -> BrushMode
 specialToMode GrassColumn = BrushGrassColumn
@@ -951,6 +958,7 @@ paletteItemsEnemies :: [PaletteItem]
 paletteItemsEnemies =
   [ PEnemyEraser
   , PEnemyGoomba
+  , PEnemyKoopa
   , PEnemyCoin
   ]
 

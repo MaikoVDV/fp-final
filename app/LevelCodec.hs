@@ -302,7 +302,7 @@ makeWorldFromTiles width tiles1D =
       height = if width == 0 then 0 else length tiles1D `div` width
       grid' = [ take width (drop (y*width) tiles1D) | y <- [0..height - 1] ]
       colliders = generateCollidersForWorld grid'
-  in World { grid = grid', colliders = colliders, slopes = [] }
+  in World { grid = grid', colliders = colliders }
 
 -- Converts the deserialized array of entity data to actual entity types
 -- [(entity type id, entity x, entity y)] -> [Entity]

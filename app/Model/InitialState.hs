@@ -51,7 +51,6 @@ buildInitialGameState ms@MenuState { menuDebugMode, menuScreenSize } = do
           World
             { grid = grid
             , colliders = generateCollidersForWorld grid
-            , slopes = []
             }
 
         goomba0 = EGoomba 0 defaultGoomba

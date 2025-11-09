@@ -6,7 +6,6 @@ import Model.Types
 import Model.TypesState
 import Model.Config
 import Model.InitialState
-import qualified Model.Types as Types
 
 tilePixelsForState :: GameState -> Float
 tilePixelsForState GameState { tileZoom, screenSize } =
@@ -76,10 +75,6 @@ visibleColRange VisibleBounds { vbMinX, vbMaxX } width =
       end   = min (width - 1) rawEnd
   in if start > end then (0, -1) else (start, end)
 
-rangeList :: (Int, Int) -> [Int]
-rangeList (a, b)
-  | a > b     = []
-  | otherwise = [a .. b]
 
 pointWithin :: VisibleBounds -> Point -> Bool
 pointWithin VisibleBounds { vbMinX, vbMaxX, vbMinY, vbMaxY } (x, y) =
@@ -129,9 +124,10 @@ renderedTileFor rows x y tile =
     hasGroundAbove _ yi _ | yi <= 0 = False
     hasGroundAbove xi yi g = isGround ((g !! (yi - 1)) !! xi)
 
-    -- Deterministic 50/50 variant choice based on tile coords
+    -- use magic numbers to 'randomize' the tile selected.
+    -- Not using real randomness, as adding impurity here would be bad design
     earthVariantFor :: Int -> Int -> Tile
-    earthVariantFor xi yi = if ((xi * 31 + yi * 57) `mod` 2 == 0) then Earth else Earth2
+    earthVariantFor xi yi = if even (xi * 31 + yi * 57) then Earth else Earth2
 
 dirToPictureScaleX :: MoveDir -> Float
 dirToPictureScaleX DirLeft  = 1

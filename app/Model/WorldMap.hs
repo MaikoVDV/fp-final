@@ -69,9 +69,10 @@ neighbors wm nid = [ other e | e <- edges wm, visible e ]
       BtoA       -> b e == nid
     other e = if a e == nid then b e else a e
 
--- Rendering helpers ---------------------------------------------------------
+-- Rendering helpers
+-- The functions below convert mathematical representations of lines, specified by
+-- beziers or Catmull-Rom splines into a list of Points that can be drawn using Gloss' lines function
 
--- Simple sampling utilities to turn curves into polylines
 bezier3 :: Float -> Point -> Point -> Point -> Point -> Point
 bezier3 t (x0,y0) (x1,y1) (x2,y2) (x3,y3) = (bx x0 x1 x2 x3, bx y0 y1 y2 y3)
   where
@@ -118,7 +119,7 @@ edgeToPolyline wm e = case shape e of
   Bezier p0 p1 p2 p3 -> sampleBezier 24 (p0,p1,p2,p3)
   CatmullRom ps      -> sampleCatmullRom 10 ps
 
--- Public helpers ------------------------------------------------------------
+-- Public helpers 
 
 edgeById :: WorldMap -> EdgeId -> Maybe Edge
 edgeById WorldMap{edges} eid = go edges

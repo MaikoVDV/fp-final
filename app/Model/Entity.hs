@@ -132,6 +132,19 @@ defaultGoomba = Goomba
   , goombaCollisions = []
   , goombaMode = GWalking
   }
+defaultKoopa :: Koopa
+defaultKoopa = Koopa
+  { koopaPos = (0, 0) 
+  , koopaVel = (0, 0) 
+  , koopaDir = DirLeft 
+  , koopaColSpec = Just ColliderSpec
+    { colliderWidth = 0.9
+    , colliderHeight = 0.6
+    , colliderOffset = (0, -0.25)
+    }
+  , koopaOnGround   = False
+  , koopaCollisions = []
+  }
 
 defaultPowerup :: Powerup
 defaultPowerup = Powerup

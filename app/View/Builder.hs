@@ -9,6 +9,7 @@ import Model.Config
 import qualified Data.Map as Map
 import View.Helpers
 import View.Entity
+import Debug.Trace
 
 viewBuilder :: BuilderState -> Picture
 viewBuilder bs@BuilderState 
@@ -75,6 +76,7 @@ renderBuilderPalette BuilderState { builderScreenSize = (screenW, screenH), buil
                           GrassColumn -> builderBrushMode == BrushGrassColumn
                           Eraser      -> builderBrushMode == BrushEraser
         PEnemyGoomba -> builderPaletteTab == TabEnemies && builderEnemySel == EnemyGoomba
+        PEnemyKoopa  -> builderPaletteTab == TabEnemies && builderEnemySel == EnemyKoopa
         PEnemyCoin   -> builderPaletteTab == TabEnemies && builderEnemySel == EnemyCoin
         PEnemyEraser -> builderPaletteTab == TabEnemies && builderEnemySel == EnemyEraser
       drawItem (i, item) =
@@ -100,6 +102,9 @@ renderBuilderPalette BuilderState { builderScreenSize = (screenW, screenH), buil
               PEnemyGoomba ->
                 let anim = getEntityAnim animMap TGoomba
                 in scaleTo iconSize (head anim)
+              PEnemyKoopa ->
+                let anim = getEntityAnim animMap TKoopa
+                in scaleTo iconSize (head anim)
               PEnemyCoin ->
                 let anim = getEntityAnim animMap TCoin
                 in scaleTo iconSize (head anim)
@@ -114,7 +119,7 @@ renderBuilderPalette BuilderState { builderScreenSize = (screenW, screenH), buil
 -- Keep the palette order in sync with Input
 data SpecialBrush = GrassColumn | Eraser
 
-data PaletteItem = PTile Tile | PSpecial SpecialBrush | PEnemyGoomba | PEnemyCoin | PEnemyEraser
+data PaletteItem = PTile Tile | PSpecial SpecialBrush | PEnemyGoomba | PEnemyKoopa | PEnemyCoin | PEnemyEraser
 
 paletteItemsBlocks :: [PaletteItem]
 paletteItemsBlocks =
@@ -134,6 +139,7 @@ paletteItemsEnemies :: [PaletteItem]
 paletteItemsEnemies =
   [ PEnemyEraser
   , PEnemyGoomba
+  , PEnemyKoopa
   , PEnemyCoin ]
 
 renderBuilderEntities :: Float -> AnimMap -> [Entity] -> Picture
@@ -212,6 +218,11 @@ renderBuilderPreview tilePixels BuilderState { builderWorld = world
              case builderEnemySel of
                EnemyGoomba ->
                  let anim = getEntityAnim animMap TGoomba
+                     sprite = withTileScale tilePixels (head anim)
+                 in translate (xWorld * tilePixels) (yWorld * tilePixels)
+                      (color (makeColor 1 1 1 0.85) sprite)
+               EnemyKoopa ->
+                 let anim = getEntityAnim animMap TKoopa
                      sprite = withTileScale tilePixels (head anim)
                  in translate (xWorld * tilePixels) (yWorld * tilePixels)
                       (color (makeColor 1 1 1 0.85) sprite)

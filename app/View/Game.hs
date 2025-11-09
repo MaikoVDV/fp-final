@@ -52,7 +52,7 @@ renderWorld tilePixels bounds GameState { world, tileMap, player, entities, debu
           width  = length (head rows)
           (rowStart, rowEnd) = visibleRowRange bounds height
           (colStart, colEnd) = visibleColRange bounds width
-          rowIndices = rangeList (rowStart, rowEnd)
+          rowIndices = [rowStart.. rowEnd]
           getTileSprite :: TileMap -> Tile -> Picture
           getTileSprite m t = Map.findWithDefault blank t m
           tilesPic = Pictures

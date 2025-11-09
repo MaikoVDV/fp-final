@@ -37,8 +37,10 @@ handlePlayerCollisions gameState =
                     in case goombaMode g of
                         GWalking ->
                           -- First stomp: enter shell mode and stop moving
-                          let gsShelled = updateGoombaById gs eId (\go -> go { goombaMode = GShelled goombaShellDuration
-                                                                            , goombaVel = (0, snd (goombaVel go)) })
+                          let gsShelled = updateGoombaById gs eId (\go -> go 
+                                { goombaMode = GShelled goombaShellDuration
+                                , goombaVel = (0, snd (goombaVel go)) 
+                                })
                           in gsShelled { player = p' }
                         GShelled _ ->
                           -- Second stomp while shelled: kill it
@@ -135,7 +137,9 @@ handleEnemyCollisions gs@GameState { entities } =
           _ -> acc
       EKoopa eId k ->
         case koopaCollider eId k of
-          Just ec | collides pc ec -> damagePlayerN goombaContactDamage acc
+          Just ec | collides pc ec -> 
+            bouncePlayer $
+            damagePlayerN goombaContactDamage acc 
           _ -> acc
       _ -> acc
 
@@ -155,16 +159,22 @@ handleEnemyCollisions gs@GameState { entities } =
         Just (EGoomba _ _) ->
           if stomp
             then
-              let p0 = player acc
-                  (vx, _) = playerVel p0
-                  p' = p0 { playerVel = (vx, stompBounceVelocity), onGround = False, stompJumpTimeLeft = stompJumpWindow }
-              in case goombaMode g of
-                   GWalking ->
-                     let accShelled = updateGoombaById acc eId (\go -> go { goombaMode = GShelled goombaShellDuration
-                                                                         , goombaVel = (0, snd (goombaVel go)) })
-                     in accShelled { player = p' }
-                   GShelled _ ->
-                     let accBounce = acc { player = p' }
-                     in killEntity accBounce eId
+              case goombaMode g of
+                GWalking ->
+                  bouncePlayer $
+                  updateGoombaById acc eId (\go -> go 
+                       { goombaMode = GShelled goombaShellDuration
+                       , goombaVel = (0, snd (goombaVel go)) 
+                       })
+                GShelled _ ->
+                  bouncePlayer $
+                  killEntity acc eId
             else damagePlayerN goombaContactDamage acc
         _ -> acc
+
+-- Sets player velocity to have some upward momentum.
+-- Used when the player jumps on an enemy
+bouncePlayer :: GameState -> GameState
+bouncePlayer gs@GameState { player } =
+  let (vx, _) = playerVel player
+  in  gs{ player = player { playerVel = (vx, stompBounceVelocity), onGround = False, stompJumpTimeLeft = stompJumpWindow }}

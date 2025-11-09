@@ -24,7 +24,7 @@ setTile w@World {grid} (x, y) newTile =
 -- with Air tiles on the appropriate sides. Returns the new world and the
 -- adjusted coordinate within the new grid.
 ensureInBounds :: World -> (Int, Int) -> (World, (Int, Int))
-ensureInBounds w@World { grid = rows, slopes } (x, y) =
+ensureInBounds w@World { grid = rows } (x, y) =
   let h = length rows
       w0 = if null rows then 0 else length (head rows)
       addLeft   = max 0 (-x)
@@ -40,4 +40,4 @@ ensureInBounds w@World { grid = rows, slopes } (x, y) =
       newX = x + addLeft
       newY = y + addTop
       newColliders = generateCollidersForWorld newRows
-  in (w { grid = newRows, colliders = newColliders, slopes = slopes }, (newX, newY))
+  in (w { grid = newRows, colliders = newColliders }, (newX, newY))

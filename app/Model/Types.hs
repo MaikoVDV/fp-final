@@ -23,10 +23,8 @@ data ActiveSegment = ActiveSegment
 
 -- Level geometry
 data World = World
-  {
-    grid   :: [[Tile]],
-    colliders :: [Collider],
-    slopes :: [SlopeData]
+  { grid   :: [[Tile]]
+  , colliders :: [Collider]
   } deriving (Eq, Show)
 
 data Tile
@@ -42,12 +40,6 @@ data Tile
   | Spikes
   deriving (Eq, Ord, Show)
 
-data SlopeData = SlopeData
-  {
-    start :: Point,
-    end   :: Point
-  } deriving (Eq, Show)
-
 type TileMap = Map.Map Tile Picture
 type AnimMap = Map.Map EntityType Animation
 
@@ -56,7 +48,7 @@ data BrushMode = BrushNormal | BrushGrassColumn | BrushEraser deriving (Eq, Show
 
 data PaletteTab = TabBlocks | TabEnemies deriving (Eq, Show)
 
-data EnemySel = EnemyGoomba | EnemyCoin | EnemyEraser deriving (Eq, Show)
+data EnemySel = EnemyGoomba | EnemyKoopa | EnemyCoin | EnemyEraser deriving (Eq, Show)
 
 -- Entities
 data Entity
@@ -129,6 +121,7 @@ data Koopa = Koopa
   , koopaVel  :: Vector
   , koopaDir  :: MoveDir
   , koopaColSpec :: Maybe ColliderSpec
+  , koopaOnGround :: Bool
   , koopaCollisions :: [CollisionEvent]
   } deriving (Eq, Show)
 
@@ -151,8 +144,12 @@ data MoveDir = DirLeft | DirRight
 
 
 -- AABB defined by position and size
-data Collider = AABB { aPos :: Point, aWidth :: Float, aHeight :: Float, tag :: ColliderTag }
-  deriving (Eq)
+data Collider = AABB 
+  { aPos :: Point
+  , aWidth :: Float
+  , aHeight :: Float
+  , tag :: ColliderTag 
+  } deriving (Eq)
 
 instance Show Collider where
   show AABB { tag } = show tag
