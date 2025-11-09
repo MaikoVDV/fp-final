@@ -6,7 +6,6 @@ import Model.Types
 import Graphics.Gloss
 
 -- Load tile map from assets
-
 loadTileMap :: IO TileMap
 loadTileMap = do
   grassPic              <- loadBMP "assets/tiles/grass.bmp"
@@ -30,6 +29,7 @@ loadTileMap = do
     , (Spikes,             spikesPic)
     ]
 
+-- Entity and player animations
 loadAnimMap :: IO AnimMap
 loadAnimMap = do
   goombaAnim  <- loadGoombaAnimation
@@ -76,12 +76,13 @@ loadCoinAnimation = sequence
   ]
 
 -- UI assets
-loadHeartsUI :: IO (Picture, Picture, Picture)
+loadHeartsUI :: IO (Picture, Picture, Picture, Picture)
 loadHeartsUI = do
-  full <- loadBMP "assets/ui/Hearts/Hearth_Full.bmp"
-  half <- loadBMP "assets/ui/Hearts/Hearth_Half.bmp"
-  empty <- loadBMP "assets/ui/Hearts/Hearth_Empty.bmp"
-  return (full, half, empty)
+  full  <- loadBMP "assets/ui/Hearts/Heart_Full.bmp"
+  half  <- loadBMP "assets/ui/Hearts/Heart_Half.bmp"
+  empty <- loadBMP "assets/ui/Hearts/Heart_Empty.bmp"
+  golden <- loadBMP "assets/ui/Hearts/Heart_Golden.bmp"
+  return (full, half, empty, golden)
 
 loadCountersUI :: IO (Map.Map Char Picture)
 loadCountersUI = do

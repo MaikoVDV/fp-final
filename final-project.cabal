@@ -17,6 +17,7 @@ executable final-project
 
     other-modules:
       Model.Types
+      Model.TypesState
       Model.Config
       Model.World
       Model.Entity

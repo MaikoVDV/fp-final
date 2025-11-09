@@ -14,10 +14,8 @@ import Data.Word (Word8, Word16, Word32)
 import Data.Bits ((.&.), (.|.), shiftL, shiftR)
 import Data.Maybe (mapMaybe)
 
-import Model.Types ( GameState(..), World(..), Tile(..), TileMap
-             , Player(..), Entity(..), Goomba(..), Koopa(..), Coin(..), ColliderSpec(..)
-             , Animation
-             )
+import Model.Types 
+import Model.TypesState
 import qualified Model.Types as Types
 import Model.Collider
 import Assets
@@ -128,7 +126,7 @@ loadLevel :: FilePath -> Bool -> TileMap -> (Int, Int) -> IO GameState
 loadLevel path debugEnabled tileMap screenDims = do
   bs <- BS.readFile path
   animMap <- loadAnimMap
-  (heartFull, heartHalf, heartEmpty) <- loadHeartsUI
+  (heartFull, heartHalf, heartEmpty, heartGolden) <- loadHeartsUI
   counters <- loadCountersUI
   playerAnimation <- loadPlayerAnimation
   lives <- loadLives
@@ -150,11 +148,10 @@ loadLevel path debugEnabled tileMap screenDims = do
         , uiHeartFull = heartFull
         , uiHeartHalf  = heartHalf
         , uiHeartEmpty = heartEmpty
+        , uiHeartGolden = heartGolden
         , uiCounters   = counters
         , playerLives  = lives
         , coinsCollected = 0
-        -- Elke entity heeft n unieke ID nodig, deze telt op als er een entity gespawnd wordt. Miss kan je 
-        -- in de mapMaybe bij entities' berekenen wat entityIdCounter moet zijn (hoogste id die al in gebruik is + 1 bijvoorbeeld?)
         , entityIdCounter = length entitiesWithIds 
         , tileZoom = 1.0
         , screenSize = screenDims
@@ -166,12 +163,12 @@ loadLevel path debugEnabled tileMap screenDims = do
         , jumpHeld = False
         , sprintHeld = False
         -- Provide a minimal menu state so returning to the menu works after finishing
-        , menuState = Types.MenuState
+        , menuState = MenuState
             { menuPlayerAnim = playerAnimation
             , menuDebugMode = debugEnabled
             , menuScreenSize = screenDims
             , menuFocus = 0
-            , menuPage = Types.MainMenu
+            , menuPage = MainMenu
             , menuCustomFiles = []
             , menuInput = ""
             }
@@ -303,7 +300,7 @@ makeWorldFromTiles width tiles1D =
 buildEntities :: [(Word8, Float, Float)] -> [Entity]
 buildEntities spawns = zipWith (\ix e -> setId e ix) [0..] (mapMaybe toEntity spawns)
   where
-    toEntity (1, x, y) = Just (EGoomba 0 Goomba { goombaPos=(x,y), goombaVel=(0,0), goombaDir=Types.Left, goombaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, goombaOnGround=False, goombaCollisions = [], goombaMode = Types.GWalking })
-    toEntity (2, x, y) = Just (EKoopa  0 Koopa  { koopaPos=(x,y),  koopaVel=(0,0), koopaDir=Types.Left, koopaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, koopaCollisions = [] })
+    toEntity (1, x, y) = Just (EGoomba 0 Goomba { goombaPos=(x,y), goombaVel=(0,0), goombaDir=DirLeft, goombaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, goombaOnGround=False, goombaCollisions = [], goombaMode = Types.GWalking })
+    toEntity (2, x, y) = Just (EKoopa  0 Koopa  { koopaPos=(x,y),  koopaVel=(0,0), koopaDir=DirLeft, koopaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, koopaCollisions = [] })
     toEntity (3, x, y) = Just (ECoin   0 Coin   { coinPos=(x,y),   coinColSpec=Just ColliderSpec { colliderWidth=0.6, colliderHeight=0.6, colliderOffset=(0,0) } })
     toEntity _         = Nothing

@@ -1,33 +1,6 @@
-module Model.WorldMap
-  ( -- Types
-    NodeId(..)
-  , EdgeId(..)
-  , LevelRef(..)
-  , NodeType(..)
-  , NodeState(..)
-  , EdgeDir(..)
-  , PathShape(..)
-  , MapNode(..)
-  , Edge(..)
-  , WorldMap(..)
-    -- Queries
-  , neighbors
-  , nodeById
-  , nodePos
-    -- Rendering
-  , renderWorldMap
-    -- Geometry helpers
-  , edgeById
-  , edgePoints
-  , polylineLength
-  , polylineAt
-  , adjacentDirected
-    -- Examples
-  , exampleWorldMap
-  ) where
+module Model.WorldMap where
 
-import Graphics.Gloss (Picture(..), Point, color, line, pictures, circleSolid, translate, makeColorI)
-import qualified Graphics.Gloss as G
+import Graphics.Gloss
 import Data.Maybe (mapMaybe)
 
 -- Identifiers
@@ -132,8 +105,8 @@ sampleCatmullRom n ps
          ] ++ [p2 | i == length ps - 2]
 
 polyline :: [Point] -> Picture
-polyline []  = G.Blank
-polyline [_] = G.Blank
+polyline []  = blank
+polyline [_] = blank
 polyline ps  = line ps
 
 edgeToPolyline :: WorldMap -> Edge -> [Point]
@@ -213,7 +186,7 @@ adjacentDirected wm nid = mapMaybe option (edges wm)
       return (e, nbId, oriented, dirV)
 
     orient :: [Point] -> Point -> Point -> [Point]
-    orient pts start end =
+    orient pts start _ =
       case pts of
         (p0:_) | close p0 start -> pts
         _ -> reverse pts
@@ -223,29 +196,6 @@ adjacentDirected wm nid = mapMaybe option (edges wm)
     unit (x,y) =
       let m = sqrt (x*x + y*y)
       in if m < 1e-6 then (0,0) else (x/m, y/m)
-
--- Render nodes as filled circles with simple color coding
-renderNode :: MapNode -> Picture
-renderNode MapNode{pos=(x,y), nodeState, nodeType} =
-  let stateCol = case nodeState of
-        Locked    -> makeColorI 0 0 0 255                     -- black
-        Completed -> makeColorI 50 80 220 255                 -- blue
-        Unlocked  -> case nodeType of
-                        Hub  -> makeColorI 160 160 160 255    -- grey for hubs
-                        _    -> makeColorI 220 50 50 255      -- red for playable levels
-      dot   = color stateCol (circleSolid 12)
-      outline = color (makeColorI 255 255 255 180) (G.thickCircle 12 2)
-  in translate x y (pictures [dot, outline])
-
-renderEdge :: [Point] -> Picture
-renderEdge ps = color (makeColorI 255 255 255 120) (polyline ps)
-
-renderWorldMap :: WorldMap -> Picture
-renderWorldMap wm =
-  pictures
-    [ pictures [ renderEdge (edgeToPolyline wm e) | e <- edges wm ]
-    , pictures [ renderNode n | n <- nodes wm ]
-    ]
 
 -- Example small map ---------------------------------------------------------
 exampleWorldMap :: WorldMap

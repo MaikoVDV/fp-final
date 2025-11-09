@@ -1,0 +1,3 @@
+- ignore: { name: "Parenthesize unary negation"}
+- ignore: { name: "Use zipWith"}
+- ignore: { name: "Use when"}

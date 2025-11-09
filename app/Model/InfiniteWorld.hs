@@ -9,6 +9,7 @@ import Model.Collider (generateCollidersForWorld)
 import Model.Entity (setId)
 import Model.InfiniteSegments (SegmentMeta (..))
 import Model.Types
+import Model.TypesState
 import LevelCodec (loadSegmentWorld)
 import System.Random (randomRIO)
 
@@ -88,7 +89,7 @@ pickSegment target metas = do
       return (Just (pool !! idx))
 
 currentSegmentIndex :: Float -> [ActiveSegment] -> Int
-currentSegmentIndex px segments = go 0 segments
+currentSegmentIndex px = go 0
   where
     go idx [] = max 0 (idx - 1)
     go idx (seg:rest)

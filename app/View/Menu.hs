@@ -2,7 +2,7 @@ module View.Menu where
 
 import Graphics.Gloss
 
-import Model.Types
+import Model.TypesState
 
 renderMenu :: MenuState -> Picture
 renderMenu MenuState { menuDebugMode, menuScreenSize, menuFocus, menuPage, menuCustomFiles, menuInput } =

@@ -2,22 +2,28 @@ module View.GameUI where
 
 import Graphics.Gloss
 import qualified Data.Map as Map
+import Debug.Trace
 
 import Model.Types
+import Model.TypesState
 import Model.Config
 import View.Entity
+import Model.Config (assetTilePixelSize)
 
+-- Renders the in-game hud, which displays hearts, coins collected and remaining lives.
+-- Note on scaling: Gloss doesn't really expose window dimension, only screen dimensions. So, our game is in fullscreen so we can
+-- just use those values instead of manually tracking window dimensions.
+-- Also, the UI elements (hearts, numbers, coins) are all from the same tileset, and so use the same tile size. (so we use the assetTilePixelSize constant)
 renderHUD :: Float -> Float -> GameState -> Picture
-renderHUD screenW screenH GameState { player, uiHeartFull, uiHeartHalf, uiHeartEmpty, uiCounters, playerLives, coinsCollected, animMap = hudAnimMap } =
+renderHUD screenW screenH GameState { player, uiHeartFull, uiHeartHalf, uiHeartEmpty, uiHeartGolden, uiCounters, playerLives, coinsCollected, animMap = hudAnimMap } =
   let
-    -- Common UI placement values
     margin = 20 :: Float
     topY = screenH / 2 - margin
 
-    -- Hearts row (top-left)
-    leftX = -screenW / 2 + margin
+    -- Hearts row (left side)
+    leftX = -screenW / 2 + margin + (assetTilePixelSize / 2 * 1.5)
     heartScale = (screenH * 0.06) / assetTilePixelSize
-    heartSpacing = 40 :: Float  -- spacing between hearts
+    heartSpacing = heartScale * assetTilePixelSize * 1.1
     heartPicFor idx =
       let hp = health player
           fulls = hp `div` 2
@@ -27,13 +33,16 @@ renderHUD screenW screenH GameState { player, uiHeartFull, uiHeartHalf, uiHeartE
                   (scale heartScale heartScale (heartPicFor i))
              | i <- [0..2] ]
 
-    -- Lives counter (top-right): 'xN'
-    showLives = 'x' : show playerLives
+    -- Lives counter 
     counterScale = (screenH * 0.06) / assetTilePixelSize
-    counterSpacing = 16 :: Float
-    rightX = screenW / 2 - margin
-    counterPics = [ Map.findWithDefault blank ch uiCounters | ch <- showLives ]
-    livesWidth = counterSpacing * fromIntegral (length counterPics)
+    counterSize  = assetTilePixelSize * counterScale
+    counterSpacing = counterSize * 0.8
+    counterDigits = show playerLives
+    counterPics = [ Map.findWithDefault blank ch uiCounters | ch <- counterDigits ]
+    goldHeartPic = scale counterScale counterScale uiHeartGolden
+    livesWidth = counterSize + counterSpacing * fromIntegral (length counterPics)
+
+    -- Coin counter (right side)
     coinDigits =
       let s = show coinsCollected
       in replicate (max 0 (3 - length s)) '0' ++ s
@@ -42,22 +51,27 @@ renderHUD screenW screenH GameState { player, uiHeartFull, uiHeartHalf, uiHeartE
                      (frame:_) -> frame
                      _         -> blank
     coinIconPic = scale counterScale counterScale coinIconBase
-    coinSpacing = counterSpacing
-    coinWidth = coinSpacing * (1 + fromIntegral (length coinDigitPics))
-    gapBetweenCounters = 20 :: Float
+    coinWidth = counterSpacing * (1 + fromIntegral (length coinDigitPics))
+    gapBetweenCounters = 200
+    rightX = screenW / 2 - margin
     totalWidth = coinWidth + gapBetweenCounters + livesWidth
     startX = rightX - totalWidth
+
     coinBlock =
       translate startX (topY - 16) $
         Pictures $
-          [coinIconPic] ++
-          [ translate (coinSpacing * (fromIntegral i + 1)) 0 (scale counterScale counterScale p)
+          coinIconPic :
+          [ translate (counterSpacing * (fromIntegral i + 1)) 0 (scale counterScale counterScale p)
           | (i, p) <- zip [0..] coinDigitPics ]
+
     livesBlock =
       translate (startX + coinWidth + gapBetweenCounters) (topY - 16) $
-        Pictures [ translate (fromIntegral i * counterSpacing) 0 (scale counterScale counterScale p)
-                 | (i,p) <- zip [0..(length counterPics - 1)] counterPics ]
-  in Pictures (hearts ++ [coinBlock, livesBlock])
+        Pictures $
+          goldHeartPic :
+          [ translate (counterSpacing * (fromIntegral i + 1)) 0 (scale counterScale counterScale p)
+          | (i, p) <- zip [0..] counterPics ]
+
+  in Pictures (hearts ++ [coinBlock, livesBlock]) 
 
 
 -- Pause overlay with Resume and Main Menu buttons

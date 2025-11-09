@@ -5,13 +5,14 @@ import qualified Data.Map as Map
 import Data.Maybe
 
 import Model.Types
+import Model.TypesState
 import Model.Collider
 import View.GameUI
 import View.Entity
 import View.Helpers
 
 viewGame :: GameState -> Picture
-viewGame gs@GameState { player, screenSize, frameCount } =
+viewGame gs@GameState { player, screenSize } =
   let tilePixels = tilePixelsForState gs
       (px, py) = playerPos player
       worldRows = grid (world gs)
@@ -36,7 +37,7 @@ viewGame gs@GameState { player, screenSize, frameCount } =
         Pictures
           [ renderWorld tilePixels visibleBounds gs 
           , renderEntities tilePixels visibleBounds gs
-          , renderPlayer tilePixels player frameCount
+          , renderPlayer tilePixels player
           ]
       hudPic = renderHUD screenWidth screenHeight gs
       pauseOverlay = if paused gs then renderPauseMenu (screenWidthInt, screenHeightInt) else blank

@@ -1,10 +1,10 @@
 module Controller.Update where
 
 import Graphics.Gloss
-import Data.Maybe (mapMaybe, maybeToList, isJust)
+import Data.Maybe (mapMaybe, isJust)
 
 import Model.Types
-import qualified Model.Types as Types
+import Model.TypesState
 import Model.Collider
 import Model.Config
 import Model.InfiniteWorld (ensureInfiniteSegments)
@@ -86,7 +86,7 @@ update _ (Building bs)      = return (Building bs)
 update dt (WorldMapScreen ms) = return (WorldMapScreen (updateMap dt ms))
 
 updateMap :: Float -> MapState -> MapState
-updateMap dt ms@MapState { wmAlong = Nothing } = ms
+updateMap _ ms@MapState { wmAlong = Nothing } = ms
 updateMap dt ms@MapState { wmAlong = Just (eid, pts, dest, t), wmSpeed } =
   let len = polylineLength pts
   in if len <= 1e-3
@@ -109,7 +109,7 @@ unlockAfterFinish ms@MapState { wmWorldMap = wm, wmCursor = cur } =
                       _     -> False
       hubIds = [ nid | nid <- neighborIds, isHubId nid ]
       -- Unlock all edges emanating from unlocked hubs as well
-      unlockFromHub e = any (\h -> allowsFrom e h) hubIds
+      unlockFromHub e = any (allowsFrom e) hubIds
       edges2 = [ if unlockFromHub e then e { unlocked = True } else e | e <- edges1 ]
       -- Also unlock nodes reachable from those hubs
       neighborIdsFromHubs = [ other e h | e <- edges wm, h <- hubIds, allowsFrom e h ]
@@ -347,7 +347,7 @@ updateGoomba dt gs gId g@Goomba
            }
   where
     gravityAccel  = (0, gravityAcceleration)
-    dirSign       = case dir of { Types.Left -> -1.0; Types.Right -> 1.0 }
+    dirSign       = case dir of { DirLeft -> -1.0; DirRight -> 1.0 }
     isWalking     = case mode of { GWalking -> True; _ -> False }
     goombaAccel   = if isWalking then (dirSign * goombaMoveAccel, 0) else (0, 0)
     airDrag       = (- (airFrictionCoeff * fst vel), 0)
@@ -355,8 +355,8 @@ updateGoomba dt gs gId g@Goomba
     clampGoombaVelocity (vx, vy) =
       let vx' = max (-goombaWalkSpeed) (min goombaWalkSpeed vx)
       in (vx', vy)
-    flipDir Types.Left  = Types.Right
-    flipDir Types.Right = Types.Left
+    flipDir DirLeft  = DirRight
+    flipDir DirRight = DirLeft
     -- Advance shelled timer and ensure x-velocity is 0 while shelled
     advanceMode m (vx, vy) = case m of
       GWalking      -> (GWalking, (vx, vy))
@@ -413,15 +413,15 @@ updatePowerup dt gs puId pu@Powerup
             }
   where
     gravityAccel  = (0, gravityAcceleration)
-    dirSign       = case dir of { Types.Left -> -1.0; Types.Right -> 1.0 }
+    dirSign       = case dir of { DirLeft -> -1.0; DirRight -> 1.0 }
     goombaAccel   = (dirSign * goombaMoveAccel, 0)
     airDrag       = (- (airFrictionCoeff * fst vel), 0)
     totalAccel    = gravityAccel `addVec` goombaAccel `addVec` airDrag
     clampGoombaVelocity (vx, vy) =
       let vx' = max (-goombaWalkSpeed) (min goombaWalkSpeed vx)
       in (vx', vy)
-    flipDir Types.Left  = Types.Right
-    flipDir Types.Right = Types.Left
+    flipDir DirLeft  = DirRight
+    flipDir DirRight = DirLeft
 
 -- After entities update, push overlapping enemies (goomba/koopa) apart symmetrically
 resolveInterEnemyOverlaps :: GameState -> GameState
@@ -479,8 +479,8 @@ resolveInterEnemyOverlaps gs@GameState { entities = es } =
                 in not (any (collides testCol) blockers)
             (finalPos, finalDir)
               | allowMove =
-                  let nd | dx > 0    = Types.Right
-                         | dx < 0    = Types.Left
+                  let nd | dx > 0    = DirRight
+                         | dx < 0    = DirLeft
                          | otherwise = goombaDir g
                   in (newPos, nd)
               | otherwise = (oldPos, goombaDir g)
@@ -495,8 +495,8 @@ resolveInterEnemyOverlaps gs@GameState { entities = es } =
                 in not (any (collides testCol) blockers)
             (finalPos, finalDir)
               | allowMove =
-                  let nd | dx > 0    = Types.Right
-                         | dx < 0    = Types.Left
+                  let nd | dx > 0    = DirRight
+                         | dx < 0    = DirLeft
                          | otherwise = koopaDir k
                   in (newPos, nd)
               | otherwise = (oldPos, koopaDir k)

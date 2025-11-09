@@ -15,6 +15,7 @@ import qualified Data.ByteString.Lazy as BL
 import System.Random (randomRIO)
 
 import Model.Types
+import Model.TypesState
 import LevelCodec (saveLevel, loadLevel)
 import MathUtils
 import Model.InitialState
@@ -92,9 +93,10 @@ saveBuilderLevel path bs = do
         , entityIdCounter = 0
         , tileMap = builderTileMap bs
         , animMap = builderAnimMap bs
-        , uiHeartFull = let (a,_,_) = hearts in a
-        , uiHeartHalf = let (_,b,_) = hearts in b
-        , uiHeartEmpty = let (_,_,c) = hearts in c
+        , uiHeartFull = let (a,_,_,_) = hearts in a
+        , uiHeartHalf = let (_,b,_,_) = hearts in b
+        , uiHeartEmpty = let (_,_,c,_) = hearts in c
+        , uiHeartGolden = let (_,_,_,d) = hearts in d
         , uiCounters = counters
         , playerLives = 0
         , coinsCollected = 0
@@ -415,6 +417,7 @@ buttonFromMouseMain (mx, my)
     btnY 1 = 50
     btnY 2 = -50
     btnY 3 = -150
+    btnY _ = undefined -- Non-positioned buttons throw an error
     inside i = let cx = 0; cy = btnY i
                    dx = abs (mx - cx)
                    dy = abs (my - cy)
@@ -459,12 +462,13 @@ focusFromMouseBuilderSelect MenuState { menuCustomFiles } (mx, my) =
       delW = 160 :: Float
       delH = btnH
       delX = btnW/2 + 40 + delW/2
-      yOf i = 160 - fromIntegral i * 80 :: Float
+      yOf :: Int -> Float
+      yOf i = 160 - fromIntegral i * 80
       insideRect cx cy w h = let dx = abs (mx - cx); dy = abs (my - cy) in dx <= w/2 && dy <= h/2
       -- check New Level first (row 0, col 0)
       checkRow0 = if insideRect 0 (yOf 0) btnW btnH then Just 0 else Nothing
       -- check file rows
-      checkRow i [] = Nothing
+      checkRow _ [] = Nothing
       checkRow i (_:xs) =
         let y = yOf i
             leftHit  = insideRect 0   y btnW btnH
@@ -653,11 +657,12 @@ handleWorldMapInput e ms@MapState { wmWorldMap = wm, wmCursor = cur, wmAlong } =
       in case positive of
           [] -> WorldMapScreen ms
           _  -> let (bestO, _) = maximumBySnd positive
-                    (e, nb, pts, _) = bestO
-                in WorldMapScreen (ms { wmAlong = Just (edgeId e, pts, nb, 0) })
+                    (edge, nb, pts, _) = bestO
+                in WorldMapScreen (ms { wmAlong = Just (edgeId edge, pts, nb, 0) })
 
     dot (x1,y1) (x2,y2) = x1*x2 + y1*y2
 
+    -- Finds the max value in an array of tuples, sorted by the snd value.
     maximumBySnd :: Ord b => [(a,b)] -> (a,b)
     maximumBySnd = foldl1 (\acc@(_,b1) x@(_,b2) -> if b2 > b1 then x else acc)
 

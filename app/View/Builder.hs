@@ -3,6 +3,7 @@ module View.Builder where
 import Graphics.Gloss
 
 import Model.Types
+import Model.TypesState
 import Model.InitialState
 import Model.Config
 import qualified Data.Map as Map
@@ -10,7 +11,17 @@ import View.Helpers
 import View.Entity
 
 viewBuilder :: BuilderState -> Picture
-viewBuilder bs@BuilderState { builderWorld, builderTileMap, builderAnimMap, builderEntities, builderTileZoom, builderScreenSize, builderDebugMode, builderCam = (camX, camY), builderConfirmLeave } =
+viewBuilder bs@BuilderState 
+  { builderWorld
+  , builderTileMap
+  , builderAnimMap
+  , builderEntities
+  , builderTileZoom
+  , builderScreenSize
+  , builderDebugMode
+  , builderCam = (camX, camY)
+  , builderConfirmLeave 
+  } =
   let tilePixels = baseTilePixelSizeForScreen builderScreenSize * builderTileZoom * scaleFactor
       worldPic   = renderBuilderWorld tilePixels builderWorld builderTileMap builderDebugMode
       previewPic = renderBuilderPreview tilePixels bs
@@ -184,7 +195,7 @@ renderBuilderPreview tilePixels BuilderState { builderWorld = world
     let wx = (mx - camX) / tilePixels
         wy = (my - camY) / tilePixels
         x  = floor wx
-        y  = floor ((-wy))
+        y  = floor (-wy)
         rows = grid world
         inBounds = y >= 0 && x >= 0 && y < length rows && x < length (head rows)
         getTileSprite m t = Map.findWithDefault blank t m
@@ -218,8 +229,7 @@ renderBuilderWorld tilePixels world tileMap debugMode =
     getTileSprite m t = Map.findWithDefault blank t m
 
     tilesPic = Pictures
-      [ let t' = case tile of
-                    _ -> renderedTileFor (grid world) x y tile
+      [ let t' = renderedTileFor (grid world) x y tile
             xWorld = fromIntegral x + 0.5
             yWorld = negate (fromIntegral y) - 0.5
         in translate (xWorld * tilePixels) (yWorld * tilePixels)

@@ -1,8 +1,10 @@
 module Model.Collider where
-import Model.Types
 
 import Graphics.Gloss
 import Data.Maybe
+
+import Model.Types
+import Model.TypesState
 
 -- Converts a ColliderSpec to a Tagged Collider
 specToCollider :: Point -> ColliderTag -> ColliderSpec -> Collider
@@ -38,7 +40,7 @@ coinCollider :: Int -> Coin -> Maybe Collider
 coinCollider cId Coin { coinPos, coinColSpec } =
   specToCollider coinPos (CTEntity cId) <$> coinColSpec
 
--- simple AABB vs AABB overlap test (treat widths/heights as full sizes)
+-- AABB vs AABB overlap test 
 collides :: Collider -> Collider -> Bool
 collides (AABB (x1,y1) w1 h1 _) (AABB (x2,y2) w2 h2 _) =
   abs (x1 - x2) * 2 < (w1 + w2) && abs (y1 - y2) * 2 < (h1 + h2)

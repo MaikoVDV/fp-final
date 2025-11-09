@@ -1,7 +1,7 @@
 module Model.Entity where
 
 import Model.Types
-import qualified Model.Types as Types
+import Model.TypesState
 import Data.List
 import Model.Config (maxJumps, maxHealth, invulnDuration)
 
@@ -111,7 +111,7 @@ damagePlayerN n gs@GameState{ player = p0 } =
         then gs
         else
           let gs' = setPlayerHealth gs (health p0 - n')
-          in gs' { player = (Types.player gs') { invulnTimeLeft = invulnDuration } }
+          in gs' { player = (player gs') { invulnTimeLeft = invulnDuration } }
 
 healPlayer :: GameState -> GameState
 healPlayer gs@GameState{ player } = setPlayerHealth gs $ health player + 1
@@ -122,7 +122,7 @@ defaultGoomba :: Goomba
 defaultGoomba = Goomba 
   { goombaPos = (0, 0)
   , goombaVel = (0, 0)
-  , goombaDir = Types.Left
+  , goombaDir = DirLeft
   , goombaColSpec = Just ColliderSpec
       { colliderWidth = 0.9
       , colliderHeight = 0.6
@@ -137,7 +137,7 @@ defaultPowerup :: Powerup
 defaultPowerup = Powerup
   { powerupPos = (0, 0)
   , powerupVel = (0, 0)
-  , powerupDir = Types.Left
+  , powerupDir = DirLeft
   , powerupColSpec = Just ColliderSpec
       { colliderWidth = 0.9
       , colliderHeight = 0.9

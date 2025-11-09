@@ -1,12 +1,11 @@
 module Model.InitialState where
 
 import Model.Types
-import qualified Model.Types as Types
+import Model.TypesState
 import Model.Collider
 import Assets 
 import Model.Entity (defaultGoomba, defaultPlayer)
 import Model.Scores (loadLives)
-import qualified Data.Map as Map
 
 targetTilesHorizontal :: Float
 targetTilesHorizontal = 20
@@ -19,12 +18,16 @@ baseTilePixelSizeForScreen (screenWidth, screenHeight) =
   let aspect = fromIntegral screenWidth / max 1 (fromIntegral screenHeight)
   in (fromIntegral screenHeight * aspect / targetTilesHorizontal) * tilePixelSizeScale
 
+-- Builds the initial game state. Much of the code inside this is legacy:
+-- the world map/level select system was added quite late in development - we used to just have one test scene (hardcoded below)
+-- We decided to keep this code around so we could bypass the level selector and still test the game.
+-- Apart from loading in assets, the level-generation code here is basically dead code.
 buildInitialGameState :: MenuState -> IO GameState
 buildInitialGameState ms@MenuState { menuDebugMode, menuScreenSize } = do
     tileMap         <- loadTileMap
     animMap         <- loadAnimMap
     playerAnimation <- loadPlayerAnimation
-    (heartFull, heartHalf, heartEmpty) <- loadHeartsUI
+    (heartFull, heartHalf, heartEmpty, heartGolden) <- loadHeartsUI
     counters <- loadCountersUI
     lives <- loadLives
     let initialPlayer = defaultPlayer {
@@ -53,11 +56,11 @@ buildInitialGameState ms@MenuState { menuDebugMode, menuScreenSize } = do
 
         goomba0 = EGoomba 0 defaultGoomba
           { goombaPos = (fromIntegral (width - 5), -5)
-          , goombaDir = Types.Left
+          , goombaDir = DirLeft
           }
         goomba1 = EGoomba 1 defaultGoomba
           { goombaPos = (fromIntegral (width - 10), -5)
-          , goombaDir = Types.Left
+          , goombaDir = DirLeft
           }
         placeRanges :: [Tile] -> [(Int, Int, Tile)] -> [Tile]
         placeRanges = foldl
@@ -70,6 +73,7 @@ buildInitialGameState ms@MenuState { menuDebugMode, menuScreenSize } = do
       , uiHeartFull = heartFull
       , uiHeartHalf = heartHalf
       , uiHeartEmpty = heartEmpty
+      , uiHeartGolden = heartGolden
       , uiCounters = counters
       , playerLives = lives
       , coinsCollected = 0

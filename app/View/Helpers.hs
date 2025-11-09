@@ -3,6 +3,7 @@ module View.Helpers where
 import Graphics.Gloss
 
 import Model.Types
+import Model.TypesState
 import Model.Config
 import Model.InitialState
 import qualified Model.Types as Types
@@ -133,5 +134,5 @@ renderedTileFor rows x y tile =
     earthVariantFor xi yi = if ((xi * 31 + yi * 57) `mod` 2 == 0) then Earth else Earth2
 
 dirToPictureScaleX :: MoveDir -> Float
-dirToPictureScaleX Types.Left  = 1
-dirToPictureScaleX Types.Right = -1
+dirToPictureScaleX DirLeft  = 1
+dirToPictureScaleX DirRight = -1

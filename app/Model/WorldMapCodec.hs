@@ -8,10 +8,8 @@ module Model.WorldMapCodec
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import Data.Aeson
-import Data.Aeson.Types (Parser)
 import qualified Data.Text as T
 import Control.Applicative ((<|>))
-import Data.Aeson.Encode.Pretty (encodePretty', defConfig, confIndent, Indent(..))
 
 import Model.WorldMap
 

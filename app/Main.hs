@@ -1,15 +1,15 @@
 module Main where
 
+import System.Environment (getArgs)
 import Graphics.Gloss
 import Graphics.Gloss.Interface.IO.Game
+import Graphics.Gloss.Interface.Environment (getScreenSize)
 
-import Model.Types
+import Model.TypesState
 import View.Main
 import Controller.Update
 import Controller.Input
 import Assets
-import System.Environment (getArgs)
-import Graphics.Gloss.Interface.Environment (getScreenSize)
 
 main :: IO ()
 main = do

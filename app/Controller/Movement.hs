@@ -5,6 +5,7 @@ import Data.List (nub, find)
 import Data.Maybe (maybeToList)
 
 import Model.Types
+import Model.TypesState
 import Model.Config
 import MathUtils
 import Model.Collider
@@ -203,8 +204,8 @@ resolveMovement collider start displacement blockers =
     worldEventTag (AABB (ex, _) _ _ _) blk =
       case tag blk of
         CTWorld (tx, ty) -> CTWorld (tx, ty)
-        CTWorldSpan ty start end ->
-          let tx = max start (min end (floor ex))
+        CTWorldSpan ty spanStart spanEnd ->
+          let tx = max spanStart (min spanEnd (floor ex))
           in CTWorld (tx, ty)
         CTPlayer p -> CTPlayer p
         CTEntity i -> CTEntity i
