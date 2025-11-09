@@ -33,11 +33,13 @@ loadTileMap = do
 loadAnimMap :: IO AnimMap
 loadAnimMap = do
   goombaAnim  <- loadGoombaAnimation
+  koopaAnim   <- loadKoopaAnimation
   powerupAnim <- loadPowerupAnimation
   coinAnim    <- loadCoinAnimation
 
   return $ Map.fromList
     [ (TGoomba, goombaAnim)
+    , (TKoopa, koopaAnim)
     , (TPowerup, powerupAnim)
     , (TCoin, coinAnim)
     ]
@@ -63,6 +65,12 @@ loadGoombaAnimation = sequence
   [ loadBMP "assets/entities/goomba_0.bmp"
   , loadBMP "assets/entities/goomba_1.bmp"
   , loadBMP "assets/entities/goomba_2.bmp"
+  ]
+loadKoopaAnimation :: IO Animation
+loadKoopaAnimation = sequence 
+  [ loadBMP "assets/entities/spikecrab_0.bmp"
+  , loadBMP "assets/entities/spikecrab_1.bmp"
+  , loadBMP "assets/entities/spikecrab_2.bmp"
   ]
 loadPowerupAnimation :: IO Animation
 loadPowerupAnimation = sequence 

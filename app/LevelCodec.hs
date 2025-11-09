@@ -14,12 +14,11 @@ import Data.Word (Word8, Word16, Word32)
 import Data.Bits ((.&.), (.|.), shiftL, shiftR)
 import Data.Maybe (mapMaybe)
 
-import Model.Types 
+import Model.Types
 import Model.TypesState
 import qualified Model.Types as Types
 import Model.Collider
 import Assets
-import qualified Data.Map as Map
 import Model.Scores (loadLives)
 import Model.Entity
 import qualified Model.Config as Config
@@ -35,6 +34,7 @@ tileId QuestionBlockEmpty = 5
 tileId Earth              = 6
 tileId Flag               = 7
 tileId Spikes             = 8
+tileId Earth2             = 9
 
 tileFromId :: Word8 -> Maybe Tile
 tileFromId 0 = Just Air
@@ -152,7 +152,7 @@ loadLevel path debugEnabled tileMap screenDims = do
         , uiCounters   = counters
         , playerLives  = lives
         , coinsCollected = 0
-        , entityIdCounter = length entitiesWithIds 
+        , entityIdCounter = length entitiesWithIds
         , tileZoom = 1.0
         , screenSize = screenDims
         , tileMap = tileMap
@@ -188,6 +188,12 @@ loadSegmentWorld path = do
       return (worldState, entitiesWithIds)
 
 -- Parser for the level format
+-- Safely parses the binary level file using Either.
+-- Type definition:
+-- Incoming bytestring read by BS ->
+-- Either 
+--   Left (error msg)
+--   Right (level width, tilegrid, (player x, player y), [(enemy type index, enemy x, enemy y)])
 parseLevel :: BS.ByteString -> Either String (Int, [Tile], (Float,Float), [(Word8, Float, Float)])
 parseLevel bs = do
   let need n msg s = if BS.length s >= n then Right () else Left ("unexpected EOF reading " ++ msg)
@@ -237,23 +243,24 @@ parseLevel bs = do
     parseEnemies n s = do
       let need n' msg s' = if BS.length s' >= n' then Right () else Left ("unexpected EOF reading " ++ msg)
       _ <- need 5 "enemy" s
-      let ty = BS.index s 0
-      let w0 = fromIntegral (BS.index s 1) :: Word16
-      let w1 = fromIntegral (BS.index s 2) :: Word16
-      let w2 = fromIntegral (BS.index s 3) :: Word16
-      let w3 = fromIntegral (BS.index s 4) :: Word16
-      let xi = fromIntegral (fromIntegral (w0 .|. (w1 `shiftL` 8)) :: Int16)
-      let yi = fromIntegral (fromIntegral (w2 .|. (w3 `shiftL` 8)) :: Int16)
-      let x = fromIntegral xi / 256
-      let y = fromIntegral yi / 256
-      (rest, s') <- Right ((), BS.drop 5 s)
+      let
+        ty = BS.index s 0
+        w0 = fromIntegral (BS.index s 1) :: Word16
+        w1 = fromIntegral (BS.index s 2) :: Word16
+        w2 = fromIntegral (BS.index s 3) :: Word16
+        w3 = fromIntegral (BS.index s 4) :: Word16
+        xi = fromIntegral (fromIntegral (w0 .|. (w1 `shiftL` 8)) :: Int16)
+        yi = fromIntegral (fromIntegral (w2 .|. (w3 `shiftL` 8)) :: Int16)
+        x = fromIntegral xi / 256
+        y = fromIntegral yi / 256
+      (_, s') <- Right ((), BS.drop 5 s)
       (more, s'') <- parseEnemies (n-1) s'
       Right ((ty, x, y) : more, s'')
 
     parseTiles :: Int -> BS.ByteString -> Either String [Tile]
     parseTiles total s = go total s []
       where
-        go 0 s' acc = Right (reverse acc)
+        go 0 _ acc = Right (reverse acc)
         go n s' acc = do
           if BS.null s' then Left "unexpected EOF in tile data" else Right ()
           let b = BS.head s'
@@ -297,10 +304,12 @@ makeWorldFromTiles width tiles1D =
       colliders = generateCollidersForWorld grid'
   in World { grid = grid', colliders = colliders, slopes = [] }
 
+-- Converts the deserialized array of entity data to actual entity types
+-- [(entity type id, entity x, entity y)] -> [Entity]
 buildEntities :: [(Word8, Float, Float)] -> [Entity]
-buildEntities spawns = zipWith (\ix e -> setId e ix) [0..] (mapMaybe toEntity spawns)
+buildEntities spawns = zipWith (flip setId) [0..] (mapMaybe toEntity spawns)
   where
     toEntity (1, x, y) = Just (EGoomba 0 Goomba { goombaPos=(x,y), goombaVel=(0,0), goombaDir=DirLeft, goombaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, goombaOnGround=False, goombaCollisions = [], goombaMode = Types.GWalking })
     toEntity (2, x, y) = Just (EKoopa  0 Koopa  { koopaPos=(x,y),  koopaVel=(0,0), koopaDir=DirLeft, koopaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, koopaCollisions = [] })
     toEntity (3, x, y) = Just (ECoin   0 Coin   { coinPos=(x,y),   coinColSpec=Just ColliderSpec { colliderWidth=0.6, colliderHeight=0.6, colliderOffset=(0,0) } })
-    toEntity _         = Nothing
+    toEntity _         = Nothing -- Discard entities with unknown IDs

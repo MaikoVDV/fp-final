@@ -68,6 +68,8 @@ handlePlayerCollisions gameState =
                   else gs
               else case hitTile of
                 Flag -> gs { nextState = NFinishLevel }
+                -- Spikes cause instant death
+                Spikes -> damagePlayerN 1000 gs
                 _    -> gs
               
         _ -> gs

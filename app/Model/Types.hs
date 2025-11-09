@@ -121,9 +121,6 @@ data Goomba = Goomba
   , goombaMode :: GoombaMode
   } deriving (Eq, Show)
 
--- Goomba behavior mode
---  - GWalking: normal walking behavior
---  - GShelled t: in-shell state for t seconds (no horizontal movement)
 data GoombaMode = GWalking | GShelled Float
   deriving (Eq, Show)
 

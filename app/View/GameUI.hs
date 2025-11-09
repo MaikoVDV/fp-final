@@ -2,13 +2,10 @@ module View.GameUI where
 
 import Graphics.Gloss
 import qualified Data.Map as Map
-import Debug.Trace
-
 import Model.Types
 import Model.TypesState
 import Model.Config
 import View.Entity
-import Model.Config (assetTilePixelSize)
 
 -- Renders the in-game hud, which displays hearts, coins collected and remaining lives.
 -- Note on scaling: Gloss doesn't really expose window dimension, only screen dimensions. So, our game is in fullscreen so we can

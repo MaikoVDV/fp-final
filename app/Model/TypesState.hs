@@ -6,6 +6,12 @@ import qualified Data.Map as Map
 import Model.Types
 import Model.WorldMap
 
+data AppState
+  = Menu MenuState
+  | Playing GameState
+  | Building BuilderState
+  | WorldMapScreen MapState
+
 -- GameState
 data GameState = GameState
   { world           :: World
@@ -47,11 +53,6 @@ data MenuState = MenuState
   , menuInput        :: String        -- generic text input buffer (e.g., new level name)
   }
 
-data AppState
-  = Menu MenuState
-  | Playing GameState
-  | Building BuilderState
-  | WorldMapScreen MapState
 
 -- World map screen state
 data MapState = MapState

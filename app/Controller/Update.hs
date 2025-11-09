@@ -130,19 +130,7 @@ unlockAfterFinish ms@MapState { wmWorldMap = wm, wmCursor = cur } =
       BtoA       -> b e == nid
     other e nid = if a e == nid then b e else a e
 
--- updateGame :: Float -> GameState -> GameState
--- updateGame dt gs =
---   let 
---     updatedPlayer   = updatePlayer dt gs
---     updatedEntities = map (updateEntity dt gs) (entities gs)
---     updatedState = gs
---       { player = updatedPlayer
---       , entities = updatedEntities
---       , pendingJump = False
---       }
---     finalState = handleCollisionEvents updatedState
---   in finalState { frameCount = frameCount gs + 1 }
-
+-- Main game update function
 updateGame :: Float -> GameState -> GameState
 updateGame dt =
   handleCollisionEvents
@@ -160,6 +148,7 @@ updateGame dt =
     clearJump ::GameState -> GameState
     clearJump gs = gs { pendingJump = False }
 
+    -- Kill the player if they've fallen out of the world
     checkVoidDeath :: GameState -> GameState
     checkVoidDeath gs@GameState { world = World { grid }, player = Player { playerPos = (_, py) } }
       | null grid = gs

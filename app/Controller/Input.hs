@@ -29,8 +29,10 @@ import Model.WorldMapCodec (loadWorldMapFile)
 import Model.InfiniteSegments (SegmentMeta(..), segmentsDirectory, segmentMetaSuffix, loadSegmentMetas)
 import Model.InfiniteWorld (ensureInfiniteSegments, segmentsAheadDefault)
 
-input :: Event -> AppState -> IO AppState
 -- Press 's' in build mode to save the current level
+-- Normally levels are saved to the levels folder, but when in debug mode, they're saved to built-in-levels
+-- When in debug mode, 'p' saves the level as a segment to be used in the infinite scolling mode
+input :: Event -> AppState -> IO AppState
 input e appState =
   case appState of
     Menu menuState    -> handleMenuInput e menuState
@@ -366,9 +368,11 @@ handleMenuInput e ms@MenuState { menuFocus, menuPage } = case menuPage of
       case focusFromMouseBuilderSelect ms (mx, my) of
         Just f -> case focusToRC f of
           (0, 0) -> goBuilderName ms
+          -- Level select buttons
           (r, 0) | r >= 1 -> case drop (r - 1) (menuCustomFiles ms) of
                                 (ff:_) -> startBuilderFromLevel ms ("levels/" ++ ff)
                                 _      -> return (Menu ms)
+          -- Delete buttons
           (r, 1) | r >= 1 -> do
             let files = menuCustomFiles ms
             case drop (r - 1) files of
