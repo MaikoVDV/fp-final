@@ -56,8 +56,59 @@ data Entity
   | EKoopa Int Koopa
   | EPowerup Int Powerup
   | ECoin Int Coin
-  | EPlatform Int
   deriving (Eq, Show)
+
+class Movable a where
+  getPos :: a -> Point
+  setPos :: Point -> a -> a
+  getVel :: a -> Vector
+  setVel :: Vector -> a -> a
+  getOnGround :: a -> Bool
+  setOnGround :: Bool -> a -> a
+  getColSpec :: a -> Maybe ColliderSpec
+  getMoveDir :: a -> MoveDir
+  setMoveDir :: MoveDir -> a -> a
+  getColEvents :: a -> [CollisionEvent]
+  setColEvents :: [CollisionEvent] -> a -> a
+
+instance Movable Goomba where
+  getPos = goombaPos
+  setPos p g = g { goombaPos = p}
+  getVel = goombaVel
+  setVel v g = g { goombaVel = v}
+  getOnGround = goombaOnGround
+  setOnGround og g = g { goombaOnGround = og }
+  getColSpec = goombaColSpec
+  getMoveDir = goombaDir
+  setMoveDir d g = g { goombaDir = d}
+  getColEvents = goombaCollisions
+  setColEvents e g = g { goombaCollisions = e}
+
+instance Movable Koopa where
+  getPos = koopaPos
+  setPos p k = k { koopaPos = p}
+  getVel = koopaVel
+  setVel v k = k { koopaVel = v}
+  getOnGround = koopaOnGround
+  setOnGround g k = k { koopaOnGround = g }
+  getColSpec = koopaColSpec
+  getMoveDir = koopaDir
+  setMoveDir d k = k { koopaDir = d}
+  getColEvents = koopaCollisions
+  setColEvents e k = k { koopaCollisions = e}
+
+instance Movable Powerup where
+  getPos = powerupPos
+  setPos p pu = pu { powerupPos = p}
+  getVel = powerupVel
+  setVel v pu = pu { powerupVel = v}
+  getOnGround _ = False
+  setOnGround _ pu = pu
+  getColSpec = powerupColSpec
+  getMoveDir = powerupDir
+  setMoveDir d pu = pu { powerupDir = d}
+  getColEvents = powerupCollisions
+  setColEvents e pu = pu { powerupCollisions = e}
 
 -- Used as a bridge between entity data and animations
 data EntityType
@@ -65,7 +116,6 @@ data EntityType
   | TKoopa
   | TPowerup
   | TCoin
-  | TPlatform
   deriving (Eq, Ord, Show)
 
 instance Ord Entity where
@@ -77,8 +127,6 @@ getEntityId (EGoomba   gId  _) = gId
 getEntityId (EKoopa    kId  _) = kId
 getEntityId (EPowerup  puId _) = puId
 getEntityId (ECoin     cId  _) = cId
-getEntityId (EPlatform pfId  ) = pfId
-
 
 data Player = Player
   { playerPos    :: Point

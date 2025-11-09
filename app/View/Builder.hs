@@ -9,7 +9,6 @@ import Model.Config
 import qualified Data.Map as Map
 import View.Helpers
 import View.Entity
-import Debug.Trace
 
 viewBuilder :: BuilderState -> Picture
 viewBuilder bs@BuilderState 

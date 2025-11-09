@@ -4,6 +4,7 @@ import Model.Types
 import Model.TypesState
 import Data.List
 import Model.Config (maxJumps, maxHealth, invulnDuration)
+import Graphics.Gloss
 
 getEntity :: GameState -> Int -> Maybe Entity
 getEntity GameState {entities = es} eId = 
@@ -12,7 +13,6 @@ getEntity GameState {entities = es} eId =
     EKoopa          kId _ -> kId  == eId
     EPowerup        pId _ -> pId  == eId
     ECoin           cId _ -> cId  == eId
-    EPlatform mpId  -> mpId == eId
     ) es
 
 -- Spawns a new entity and updates global id counter
@@ -30,6 +30,20 @@ killEntity gs@GameState { entities } eId =
   gs { entities = filter (\e -> getEntityId e /= eId) entities
   }
 
+-- Just flips the direction of movement for entities
+flipDir :: MoveDir -> MoveDir
+flipDir DirLeft  = DirRight
+flipDir DirRight = DirLeft
+
+-- Returns the sign of a movement direction
+dirSign :: MoveDir -> Float
+dirSign dir = case dir of { DirLeft -> -1.0; DirRight -> 1.0 }
+
+entityPosition :: Entity -> Maybe Point
+entityPosition (EGoomba _ Goomba { goombaPos }) = Just goombaPos
+entityPosition (EKoopa  _ Koopa  { koopaPos  }) = Just koopaPos
+entityPosition (EPowerup _ Powerup { powerupPos }) = Just powerupPos
+entityPosition (ECoin    _ Coin    { coinPos    }) = Just coinPos
 -- Update a Goomba by entity id using a transformation function
 updateGoombaById :: GameState -> Int -> (Goomba -> Goomba) -> GameState
 updateGoombaById gs@GameState { entities } targetId f =
@@ -43,14 +57,12 @@ setId (EGoomba  _ g)  newId = EGoomba  newId g
 setId (EKoopa   _ k)  newId = EKoopa   newId k
 setId (EPowerup _ pu) newId = EPowerup newId pu
 setId (ECoin    _ c)  newId = ECoin    newId c
-setId (EPlatform _  ) newId = EPlatform newId
 
 getEntityType :: Entity -> EntityType
 getEntityType (EGoomba   _ _) = TGoomba
 getEntityType (EKoopa    _ _) = TKoopa
 getEntityType (EPowerup  _ _) = TPowerup
 getEntityType (ECoin     _ _) = TCoin
-getEntityType (EPlatform _  ) = TPlatform
 
 defaultPlayer :: Player
 defaultPlayer = Player

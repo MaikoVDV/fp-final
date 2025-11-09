@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-type-defaults #-}
 module LevelCodec
   ( saveLevel
   , loadLevel
@@ -309,7 +310,38 @@ makeWorldFromTiles width tiles1D =
 buildEntities :: [(Word8, Float, Float)] -> [Entity]
 buildEntities spawns = zipWith (flip setId) [0..] (mapMaybe toEntity spawns)
   where
-    toEntity (1, x, y) = Just (EGoomba 0 Goomba { goombaPos=(x,y), goombaVel=(0,0), goombaDir=DirLeft, goombaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, goombaOnGround=False, goombaCollisions = [], goombaMode = Types.GWalking })
-    toEntity (2, x, y) = Just (EKoopa  0 Koopa  { koopaPos=(x,y),  koopaVel=(0,0), koopaDir=DirLeft, koopaColSpec=Just ColliderSpec { colliderWidth=0.9, colliderHeight=0.9, colliderOffset=(0,0) }, koopaCollisions = [] })
-    toEntity (3, x, y) = Just (ECoin   0 Coin   { coinPos=(x,y),   coinColSpec=Just ColliderSpec { colliderWidth=0.6, colliderHeight=0.6, colliderOffset=(0,0) } })
-    toEntity _         = Nothing -- Discard entities with unknown IDs
+    toEntity (1, x, y) = Just (EGoomba 0 Goomba 
+      { goombaPos=(x,y)
+      , goombaVel=(0,0)
+      , goombaDir=DirLeft
+      , goombaColSpec=Just ColliderSpec 
+        { colliderWidth=0.9
+        , colliderHeight=0.9
+        , colliderOffset=(0,0) 
+      }
+      , goombaOnGround=False
+      , goombaCollisions = []
+      , goombaMode = Types.GWalking 
+    })
+    toEntity (2, x, y) = Just (EKoopa 0 Koopa  
+      { koopaPos=(x,y)
+      , koopaVel=(0,0)
+      , koopaDir=DirLeft
+      , koopaColSpec=Just ColliderSpec 
+        { colliderWidth=0.9
+        , colliderHeight=0.9
+        , colliderOffset=(0,0)
+      }
+      , koopaOnGround=False
+      , koopaCollisions = [] 
+      })
+    toEntity (3, x, y) = Just (ECoin 0 Coin   
+      { coinPos=(x,y)
+      , coinColSpec=Just ColliderSpec 
+        { colliderWidth=0.6
+        , colliderHeight=0.6
+        , colliderOffset=(0,0) 
+        } 
+      })
+    -- Entities with unknown IDs cause the program to crash. This is to prevent unexpected behavior in case an invalid level file is loaded.
+    toEntity _         = undefined 

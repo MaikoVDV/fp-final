@@ -1,7 +1,7 @@
 module Controller.Update where
 
 import Graphics.Gloss
-import Data.Maybe (mapMaybe, isJust)
+import Data.Maybe (isJust)
 
 import Model.Types
 import Model.TypesState
@@ -9,7 +9,7 @@ import Model.Collider
 import Model.Config
 import Model.InfiniteWorld (ensureInfiniteSegments)
 import Model.InitialState (baseTilePixelSizeForScreen)
-import Model.Entity (setPlayerHealth)
+import Model.Entity 
 
 import Controller.Input
 import Controller.Collision
@@ -160,7 +160,7 @@ updatePlayer :: Float -> GameState -> GameState
 updatePlayer dt gs =
   let p = player gs
       -- Phase-through enemies: only world blocks the player
-      blockers = colliders (world gs) ++ blockingEntityColliders (entities gs)
+      blockers = colliders (world gs)
       (jumpAccel, jumpTimer) = computeJumpHold dt gs p
       movedPlayer = applyMovement dt blockers gs jumpAccel p
       -- Advance animation clock proportionally to horizontal speed and dt,
@@ -222,26 +222,13 @@ updatePlayer dt gs =
             }
         else gs { player = playerAfterHold { jumpsLeft = jumpsAvailable } }
 
-  where
-    blockingEntityColliders :: [Entity] -> [Collider]
-    blockingEntityColliders es = mapMaybe entityCollider (filter isBlocking es)
-      where
-        isBlocking :: Entity -> Bool
-        isBlocking e = case e of
-          -- Enemies do not block the player
-          EGoomba  _ _ -> False
-          EKoopa   _ _ -> False
-          EPlatform _   -> True
-          EPowerup _ _ -> False
-          ECoin    _ _ -> False
-
-
 updateEntities :: Float -> GameState -> GameState
 updateEntities dt gs = gs { entities = map (updateIfActive dt gs) (entities gs) }
   where
     updateIfActive delta state entity
       | entityWithinActiveBounds state entity = updateEntity delta state entity
       | otherwise = entity
+
 
 entityWithinActiveBounds :: GameState -> Entity -> Bool
 entityWithinActiveBounds gs entity =
@@ -266,114 +253,44 @@ activationBounds GameState { player = Player { playerPos = (px, py) }, screenSiz
       maxY = py + offsetMax + margin
   in (minX, maxX, minY, maxY)
 
-pointInBounds :: (Float, Float, Float, Float) -> Point -> Bool
-pointInBounds (minX, maxX, minY, maxY) (x, y) =
-  x >= minX && x <= maxX && y >= minY && y <= maxY
-
-entityPosition :: Entity -> Maybe Point
-entityPosition (EGoomba _ Goomba { goombaPos }) = Just goombaPos
-entityPosition (EKoopa  _ Koopa  { koopaPos  }) = Just koopaPos
-entityPosition (EPowerup _ Powerup { powerupPos }) = Just powerupPos
-entityPosition (ECoin    _ Coin    { coinPos    }) = Just coinPos
-entityPosition _ = Nothing
-
--- Handle updating different types of entities separately
+-- Not all entities move, so differentiate between those entities.
+-- Goomba's can move into their shells, so that behavior is handled separately using updateShelledGoomba.
 updateEntity :: Float -> GameState -> Entity -> Entity
-updateEntity dt gs (EGoomba  gId  g)  = EGoomba  gId  (updateGoomba  dt gs gId  g)
-updateEntity dt gs (EKoopa   kId  k)  = EKoopa   kId  (updateKoopa   dt gs kId  k)
-updateEntity dt gs (EPowerup puId pu) = EPowerup puId (updatePowerup dt gs puId pu)
+updateEntity dt gs (EGoomba  gId  g)  = EGoomba  gId  (if goombaMode g == GWalking then updateMovable dt gs gId  g else updateShelledGoomba dt g)
+updateEntity dt gs (EKoopa   kId  k)  = EKoopa   kId  (updateMovable dt gs kId  k)
+updateEntity dt gs (EPowerup puId pu) = EPowerup puId (updateMovable dt gs puId pu)
 updateEntity _  _  (ECoin    cId  c)  = ECoin    cId  c
-updateEntity _  _  e                   = e
 
-updateGoomba :: Float -> GameState -> Int -> Goomba -> Goomba
-updateGoomba dt gs gId g@Goomba
-  { goombaPos = pos
-  , goombaVel = vel
-  , goombaColSpec = colSpec
-  , goombaDir = dir
-  , goombaMode = mode
-  } =
-  case colSpec of
-    Nothing ->
-      let velAfterAccel = addVec vel (scaleVec totalAccel dt)
-          velLimited    = clampGoombaVelocity velAfterAccel
-          newPos        = addVecToPoint pos (scaleVec velLimited dt)
-          (mode', velFinal) = advanceMode mode velLimited
-      in g { goombaPos = newPos
-           , goombaVel = velFinal
-           , goombaMode = mode'
-           }
-    Just spec ->
-      let velAfterAccel   = addVec vel (scaleVec totalAccel dt)
-          displacement    = scaleVec velAfterAccel dt
-          -- Only block against world and player; enemy separation handled globally
-          -- Phase-through player: only world blocks the goomba
-          blockers        = colliders (world gs)
-          collider        = specToCollider pos (CTEntity gId) spec
-          (resolvedPos, flags, events) = resolveMovement collider pos displacement blockers
-          velAfterCollision    = applyCollisionFlags flags velAfterAccel
-          contactDrag          = contactFrictionAccel (contactNormals flags) velAfterCollision
-          velWithFriction      = addVec velAfterCollision (scaleVec contactDrag dt)
-          velLimited           = clampGoombaVelocity velWithFriction
-          wallAheadProbe       =
-            hitX flags &&
-            let probeOffset   = (dirSign * wallProbeDistance, 0)
-                probeCollider = specToCollider (addVecToPoint resolvedPos probeOffset) None spec
-            in any (collides probeCollider) blockers
-          hitWall              = wallAheadProbe
-          newDirBase           = if hitWall then flipDir dir else dir
-          newDir               = if isWalking then newDirBase else dir
-          adjVxWalk            = if hitWall then 0 else fst velLimited
-          vxMode               = if isWalking then adjVxWalk else 0
-          velFinal0            = (vxMode, snd velLimited)
-          (mode', velFinal)    = advanceMode mode velFinal0
-      in g { goombaPos        = resolvedPos
-           , goombaVel        = velFinal
-           , goombaDir        = newDir
-           , goombaOnGround   = groundContact flags
-           , goombaCollisions = events
-           , goombaMode       = mode'
-           }
-  where
-    gravityAccel  = (0, gravityAcceleration)
-    dirSign       = case dir of { DirLeft -> -1.0; DirRight -> 1.0 }
-    isWalking     = case mode of { GWalking -> True; _ -> False }
-    goombaAccel   = if isWalking then (dirSign * goombaMoveAccel, 0) else (0, 0)
-    airDrag       = (- (airFrictionCoeff * fst vel), 0)
-    totalAccel    = gravityAccel `addVec` goombaAccel `addVec` airDrag
+
+updateMovable :: Movable a => Float -> GameState -> Int -> a -> a
+updateMovable dt gs gId movable =
+  let 
+    pos = getPos movable
+    vel = getVel movable
+    dir = getMoveDir movable
+    colSpec = getColSpec movable
+
     clampGoombaVelocity (vx, vy) =
       let vx' = max (-goombaWalkSpeed) (min goombaWalkSpeed vx)
       in (vx', vy)
-    flipDir DirLeft  = DirRight
-    flipDir DirRight = DirLeft
-    -- Advance shelled timer and ensure x-velocity is 0 while shelled
-    advanceMode m (vx, vy) = case m of
-      GWalking      -> (GWalking, (vx, vy))
-      GShelled ttl  -> let ttl' = max 0 (ttl - dt)
-                       in if ttl' <= 0
-                            then (GWalking, (0, vy))
-                            else (GShelled ttl', (0, vy))
-
-updateKoopa :: Float -> GameState -> Int -> Koopa -> Koopa
-updateKoopa dt gs gId k@Koopa
-  { koopaPos = pos
-  , koopaVel= vel
-  , koopaColSpec = colSpec
-  , koopaDir = dir
-  } =
-  case colSpec of
-    Nothing ->
-      let velAfterAccel = addVec vel (scaleVec totalAccel dt)
-          velLimited    = clampGoombaVelocity velAfterAccel
-          newPos        = addVecToPoint pos (scaleVec velLimited dt)
-      in k { koopaPos = newPos
-           , koopaVel = velLimited
-           }
-    Just spec ->
-      let velAfterAccel   = addVec vel (scaleVec totalAccel dt)
+    airDrag       = (- (airFrictionCoeff * fst vel), 0)
+    gravityAccel  = (0, gravityAcceleration)
+    accel         = (dirSign dir * goombaMoveAccel, 0) 
+    totalAccel    = gravityAccel `addVec` accel `addVec` airDrag 
+  in
+    case colSpec of
+      Nothing ->
+        let velAfterAccel = addVec vel (scaleVec totalAccel dt)
+            velLimited    = clampGoombaVelocity velAfterAccel
+            newPos        = addVecToPoint pos (scaleVec velLimited dt)
+        in
+          (setPos newPos .
+          setVel velLimited
+          ) movable
+      Just spec ->
+        let 
+          velAfterAccel   = addVec vel (scaleVec totalAccel dt)
           displacement    = scaleVec velAfterAccel dt
-          -- Only block against world and player; enemy separation handled globally
-          -- Phase-through player: only world blocks the goomba
           blockers        = colliders (world gs)
           collider        = specToCollider pos (CTEntity gId) spec
           (resolvedPos, flags, events) = resolveMovement collider pos displacement blockers
@@ -381,85 +298,35 @@ updateKoopa dt gs gId k@Koopa
           contactDrag          = contactFrictionAccel (contactNormals flags) velAfterCollision
           velWithFriction      = addVec velAfterCollision (scaleVec contactDrag dt)
           velLimited           = clampGoombaVelocity velWithFriction
+
           wallAheadProbe       =
             hitX flags &&
-            let probeOffset   = (dirSign * wallProbeDistance, 0)
+            let probeOffset   = (dirSign dir * wallProbeDistance, 0)
                 probeCollider = specToCollider (addVecToPoint resolvedPos probeOffset) None spec
             in any (collides probeCollider) blockers
           hitWall              = wallAheadProbe
           newDir            = if hitWall then flipDir dir else dir
           vxWalk            = if hitWall then 0 else fst velLimited
           velFinal            = (vxWalk, snd velLimited)
-      in k { koopaPos        = resolvedPos
-           , koopaVel        = velFinal
-           , koopaDir        = newDir
-           , koopaOnGround   = groundContact flags
-           , koopaCollisions = events
-           }
-  where
-    gravityAccel  = (0, gravityAcceleration)
-    dirSign       = case dir of { DirLeft -> -1.0; DirRight -> 1.0 }
-    goombaAccel   = (dirSign * goombaMoveAccel, 0) 
-    airDrag       = (- (airFrictionCoeff * fst vel), 0)
-    totalAccel    = gravityAccel `addVec` goombaAccel `addVec` airDrag
-    clampGoombaVelocity (vx, vy) =
-      let vx' = max (-goombaWalkSpeed) (min goombaWalkSpeed vx)
-      in (vx', vy)
-    flipDir DirLeft  = DirRight
-    flipDir DirRight = DirLeft
-  
+        in 
+          ( setPos resolvedPos .
+          setVel velFinal .
+          setMoveDir newDir .
+          setOnGround (groundContact flags) .
+          setColEvents events) movable
 
--- Entity-Entity separation handled in resolveInterEnemyOverlaps
-updatePowerup :: Float -> GameState -> Int -> Powerup -> Powerup
-updatePowerup dt gs puId pu@Powerup
-  { powerupPos = pos
-  , powerupVel = vel
-  , powerupColSpec = colSpec
-  , powerupDir = dir
-  } =
-  case colSpec of
-    Nothing ->
-      let velAfterAccel = addVec vel (scaleVec totalAccel dt)
-          velLimited    = clampGoombaVelocity velAfterAccel
-          newPos        = addVecToPoint pos (scaleVec velLimited dt)
-      in pu { powerupPos = newPos
-            , powerupVel = velLimited
-            }
-    Just spec ->
-      let velAfterAccel   = addVec vel (scaleVec totalAccel dt)
-          displacement    = scaleVec velAfterAccel dt
-          blockers        = colliders (world gs) -- doesn't collide with player or entities
-          collider        = specToCollider pos (CTEntity puId) spec
-          (resolvedPos, flags, events) = resolveMovement collider pos displacement blockers
-          velAfterCollision    = applyCollisionFlags flags velAfterAccel
-          contactDrag          = contactFrictionAccel (contactNormals flags) velAfterCollision
-          velWithFriction      = addVec velAfterCollision (scaleVec contactDrag dt)
-          velLimited           = clampGoombaVelocity velWithFriction
-          wallAhead            =
-            hitX flags &&
-            let probeOffset   = (dirSign * wallProbeDistance, 0)
-                probeCollider = specToCollider (addVecToPoint resolvedPos probeOffset) None spec
-            in any (collides probeCollider) blockers
-          hitWall              = wallAhead
-          newDirBase           = if hitWall then flipDir dir else dir
-          adjVx                = if hitWall then 0 else fst velLimited
-          velFinal             = (adjVx, snd velLimited)
-      in pu { powerupPos        = resolvedPos
-            , powerupVel        = velFinal
-            , powerupDir        = newDirBase
-            , powerupCollisions = events
-            }
+updateShelledGoomba :: Float -> Goomba -> Goomba
+updateShelledGoomba dt g@Goomba {goombaMode, goombaVel} = 
+  g {
+    goombaMode = fst $ advanceMode goombaMode goombaVel
+  }
   where
-    gravityAccel  = (0, gravityAcceleration)
-    dirSign       = case dir of { DirLeft -> -1.0; DirRight -> 1.0 }
-    goombaAccel   = (dirSign * goombaMoveAccel, 0)
-    airDrag       = (- (airFrictionCoeff * fst vel), 0)
-    totalAccel    = gravityAccel `addVec` goombaAccel `addVec` airDrag
-    clampGoombaVelocity (vx, vy) =
-      let vx' = max (-goombaWalkSpeed) (min goombaWalkSpeed vx)
-      in (vx', vy)
-    flipDir DirLeft  = DirRight
-    flipDir DirRight = DirLeft
+    advanceMode m (vx, vy) = case m of
+      GWalking      -> (GWalking, (vx, vy))
+      GShelled ttl  -> let ttl' = max 0 (ttl - dt)
+                       in if ttl' <= 0
+                            then (GWalking, (0, vy))
+                            else (GShelled ttl', (0, vy))
 
 -- After entities update, push overlapping entities (goomba/koopa) apart symmetrically
 resolveInterEnemyOverlaps :: GameState -> GameState

@@ -18,7 +18,6 @@ renderEntity tPx m fCtx (EGoomba   _ Goomba { goombaPos, goombaDir, goombaMode }
 renderEntity tPx m fCtx (EKoopa    _ Koopa { koopaPos, koopaDir })      = renderEntity' tPx (getEntityAnim m TKoopa)   fCtx koopaPos   koopaDir
 renderEntity tPx m fCtx (EPowerup  _ Powerup{ powerupPos, powerupDir }) = renderEntity' tPx (getEntityAnim m TPowerup) fCtx powerupPos powerupDir
 renderEntity tPx m fCtx (ECoin     _ Coin  { coinPos })                 = renderEntity' tPx (getEntityAnim m TCoin)    fCtx coinPos    DirLeft
-renderEntity _   _ _    (EPlatform _)                                   = blank
 
 renderEntity' :: Float -> Animation -> Int -> Point -> MoveDir -> Picture
 renderEntity' tPx anim fCtx (x, y) dir =
