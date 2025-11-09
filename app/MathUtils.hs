@@ -46,3 +46,6 @@ clamp01 x
 pointInBounds :: (Float, Float, Float, Float) -> Point -> Bool
 pointInBounds (minX, maxX, minY, maxY) (x, y) =
   x >= minX && x <= maxX && y >= minY && y <= maxY
+
+withinBounds :: Float -> Float -> Bool
+withinBounds x maxX = x >= 0 && x < maxX

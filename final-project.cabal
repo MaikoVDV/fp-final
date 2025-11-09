@@ -44,6 +44,7 @@ executable final-project
       Controller.WorldMap
       Controller.Input
       Controller.InputMenu
+      Controller.InputBuilder
       MathUtils
       Assets
       LevelCodec
